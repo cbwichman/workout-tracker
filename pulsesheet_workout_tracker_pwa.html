@@ -86,39 +86,36 @@
 
   <!-- TOP NAVIGATION BAR -->
   <header class="sticky top-0 z-30 bg-ios-bg/85 backdrop-blur-xl border-b border-ios-border safe-top">
-    <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2.5 cursor-pointer" onclick="app.navigate('dashboard')">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-ios-blue to-ios-purple flex items-center justify-center shadow-lg shadow-ios-blue/20">
+    <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0 cursor-pointer" onclick="app.navigate('dashboard')">
+        <div class="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-ios-blue to-ios-purple flex items-center justify-center shadow-lg shadow-ios-blue/20">
           <i data-lucide="activity" class="w-5 h-5 text-white"></i>
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="font-bold text-base tracking-tight text-white">PulseSheet</h1>
-            <span class="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">No-Timer PWA</span>
-          </div>
-          <p id="syncStatusSub" class="text-[11px] text-zinc-400 flex items-center gap-1">
+        <div class="min-w-0">
+          <h1 class="font-bold text-base leading-tight tracking-tight text-white truncate">PulseSheet</h1>
+          <p id="syncStatusSub" class="text-[11px] text-zinc-400 flex items-center gap-1 whitespace-nowrap truncate">
             <span class="w-1.5 h-1.5 rounded-full bg-ios-green inline-block"></span>
             <span>Local-First Ready</span>
           </p>
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 shrink-0">
         <!-- Pending Sync Queue Button (shown when unsynced logs exist) -->
-        <button id="retrySyncBtn" onclick="app.syncPendingLogs()" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-ios-orange/15 border border-ios-orange/40 text-ios-orange text-xs font-medium active:scale-95 transition">
+        <button id="retrySyncBtn" onclick="app.syncPendingLogs()" class="hidden h-9 items-center gap-1.5 px-2.5 rounded-xl bg-ios-orange/15 border border-ios-orange/40 text-ios-orange text-xs font-semibold whitespace-nowrap active:scale-95 transition">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-          <span id="pendingCountBadge">0</span>
+          <span id="pendingCountBadge" class="font-mono">0</span>
         </button>
 
         <!-- Template & Exercise Customizer Button -->
-        <button onclick="app.openModal('customizerModal')" class="p-2 rounded-xl bg-ios-card border border-ios-border text-zinc-300 hover:text-white active:scale-95 transition" title="Customize Exercises">
+        <button onclick="app.openModal('customizerModal')" class="w-9 h-9 flex items-center justify-center rounded-xl bg-ios-card border border-ios-border text-zinc-300 hover:text-white active:scale-95 transition" title="Customize Exercises" aria-label="Customize Exercises">
           <i data-lucide="sliders" class="w-4 h-4"></i>
         </button>
 
         <!-- Backend & Shortcut Setup Modal Button -->
-        <button onclick="app.openModal('setupModal')" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-ios-card border border-ios-border text-xs font-semibold text-zinc-200 hover:border-ios-blue/50 active:scale-95 transition">
-          <i data-lucide="database" class="w-3.5 h-3.5 text-ios-blue"></i>
-          <span>Sheets & Watch</span>
+        <button onclick="app.openModal('setupModal')" class="h-9 flex items-center gap-1.5 px-2.5 sm:px-3 rounded-xl bg-ios-card border border-ios-border text-xs font-semibold text-zinc-200 whitespace-nowrap hover:border-ios-blue/50 active:scale-95 transition" title="Sheets & Watch Setup" aria-label="Sheets & Watch Setup">
+          <i data-lucide="database" class="w-4 h-4 text-ios-blue"></i>
+          <span class="hidden sm:inline">Sheets &amp; Watch</span>
         </button>
       </div>
     </div>
@@ -2229,7 +2226,8 @@ function jsonResponse(obj) {
         if (pendingCount > 0) {
           retryBtn.classList.remove("hidden");
           retryBtn.classList.add("flex");
-          badge.textContent = `${pendingCount} unsynced`;
+          badge.textContent = `${pendingCount}`;
+          retryBtn.title = `${pendingCount} workout${pendingCount === 1 ? "" : "s"} not yet synced — tap to retry`;
         } else {
           retryBtn.classList.add("hidden");
           retryBtn.classList.remove("flex");
