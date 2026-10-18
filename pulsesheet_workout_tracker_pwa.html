@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="PulseSheet" />
@@ -11,7 +11,7 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
   <!-- Google Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,7 +112,7 @@
 
         <!-- Template & Exercise Customizer Button -->
         <button onclick="app.openModal('customizerModal')" class="p-2 rounded-xl bg-ios-card border border-ios-border text-zinc-300 hover:text-white active:scale-95 transition" title="Customize Exercises">
-          <i data-lucide="Sliders" class="w-4 h-4"></i>
+          <i data-lucide="sliders" class="w-4 h-4"></i>
         </button>
 
         <!-- Backend & Shortcut Setup Modal Button -->
@@ -725,7 +725,8 @@ function setupDatabase() {
     "Exercises": ["Exercise_ID", "Name", "Split_Category", "Equipment", "Setup_Notes"],
     "Templates": ["Template_ID", "Order", "Superset_Group", "Exercise_ID", "Target_Sets", "Target_Reps"],
     "Strength_Logs": ["Timestamp", "Session_ID", "Template_ID", "Exercise_ID", "Exercise_Name", "Superset_Group", "Set_Number", "Weight_Lbs", "Reps", "Setup_Notes", "Session_Avg_HR", "Session_Max_HR", "Active_Cals", "Notes"],
-    "Cardio_Logs": ["Timestamp", "Session_ID", "Modality", "Duration_Min", "Distance_Mi", "Incline_Pct", "Avg_Pace_or_Speed", "Interval_Split_Notes", "Avg_HR", "Max_HR", "Active_Cals"]
+    "Cardio_Logs": ["Timestamp", "Session_ID", "Modality", "Duration_Min", "Distance_Mi", "Incline_Pct", "Avg_Pace_or_Speed", "Interval_Split_Notes", "Avg_HR", "Max_HR", "Active_Cals"],
+    "Watch_Telemetry": ["Timestamp", "Session_ID", "Avg_HR", "Max_HR", "Active_Cals"]
   };
 
   Object.keys(schemas).forEach(tabName => {
@@ -847,6 +848,10 @@ function seedInitialData() {
 }
 
 function doGet(e) {
+  const params = (e && e.parameter) || {};
+  if (SECRET_KEY && params.secret !== SECRET_KEY) {
+    return jsonResponse({ status: "error", message: "Invalid secret key" });
+  }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const readTab = (name) => {
     const sheet = ss.getSheetByName(name);
@@ -866,11 +871,19 @@ function doGet(e) {
     cardio_logs: readTab("Cardio_Logs").slice(-100)
   };
 
-  return ContentService.createTextOutput(JSON.stringify(payload))
-    .setMimeType(ContentService.MimeType.JSON);
+  return jsonResponse(payload);
+}
+
+// Returns true if a session was already logged (prevents duplicate rows on retry)
+function sessionExists(sheet, sessionId) {
+  if (!sheet || !sessionId || sheet.getLastRow() < 2) return false;
+  const ids = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues();
+  return ids.some(r => String(r[0]) === String(sessionId));
 }
 
 function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
   try {
     const body = JSON.parse(e.postData.contents);
     if (SECRET_KEY && body.secret !== SECRET_KEY) {
@@ -883,8 +896,10 @@ function doPost(e) {
     // 1. Handle Strength Workout Batch
     if (body.action === "log_strength" && Array.isArray(body.sets)) {
       const sheet = ss.getSheetByName("Strength_Logs");
-      body.sets.forEach(s => {
-        sheet.appendRow([
+      if (sessionExists(sheet, body.session_id)) {
+        return jsonResponse({ status: "ok", duplicate: true });
+      }
+      const rows = body.sets.map(s => [
           now,
           body.session_id,
           body.template_id,
@@ -900,7 +915,9 @@ function doPost(e) {
           body.active_cals || "",
           body.notes || ""
         ]);
-      });
+      if (rows.length) {
+        sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      }
 
       // Also update persistent Setup_Notes on Exercises tab if changed
       const exSheet = ss.getSheetByName("Exercises");
@@ -920,6 +937,9 @@ function doPost(e) {
     // 2. Handle Cardio / Interval Log
     if (body.action === "log_cardio") {
       const sheet = ss.getSheetByName("Cardio_Logs");
+      if (sessionExists(sheet, body.session_id)) {
+        return jsonResponse({ status: "ok", duplicate: true });
+      }
       sheet.appendRow([
         now,
         body.session_id,
@@ -938,12 +958,17 @@ function doPost(e) {
 
     // 3. Handle Standalone Apple Watch iOS Shortcut Telemetry Patch
     if (body.action === "watch_telemetry") {
+      let wSheet = ss.getSheetByName("Watch_Telemetry");
+      if (!wSheet) { setupDatabase(); wSheet = ss.getSheetByName("Watch_Telemetry"); }
+      wSheet.appendRow([now, body.session_id || "", body.avg_hr || "", body.max_hr || "", body.active_cals || ""]);
       return jsonResponse({ status: "ok", watch_synced: true });
     }
 
     return jsonResponse({ status: "error", message: "Unknown action" });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -1246,6 +1271,27 @@ function jsonResponse(obj) {
 
     const STORAGE_KEY = "PULSESHEET_V2_STATE";
 
+    // Escape user-provided text before inserting into innerHTML templates
+    const esc = (v) => String(v === null || v === undefined ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+    // RFC 4180 CSV cell (quotes when needed, neutralizes spreadsheet formula injection)
+    const csvCell = (v) => {
+      if (v === null || v === undefined) return "";
+      let s = String(v);
+      if (typeof v === "string" && /^[=+\-@]/.test(s)) s = "'" + s;
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    // Collision-resistant session / exercise IDs
+    const newId = (prefix) => {
+      const rand = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+        : Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      return `${prefix}_${rand.toUpperCase()}`;
+    };
+
     const app = {
       state: null,
       editingExerciseId: null,
@@ -1256,12 +1302,16 @@ function jsonResponse(obj) {
           try {
             const parsed = JSON.parse(saved);
             if (parsed.schemaVersion === DEFAULT_DB.schemaVersion) {
-              this.state = parsed;
+              this.state = this.migrateState(parsed);
             } else {
-              this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
+              // Never discard history on version change: back up, then merge onto new defaults
+              localStorage.setItem(`${STORAGE_KEY}_BACKUP_${parsed.schemaVersion || "unknown"}`, saved);
+              this.state = this.migrateState(parsed);
               this.saveState();
             }
           } catch (e) {
+            // Corrupt JSON: keep a copy of the raw data before falling back to defaults
+            localStorage.setItem(`${STORAGE_KEY}_CORRUPT_BACKUP`, saved);
             this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
           }
         } else {
@@ -1285,6 +1335,26 @@ function jsonResponse(obj) {
         this.renderDashboard();
         this.updateSyncStatusUI();
         lucide.createIcons();
+
+        // Automatically retry queued uploads when connectivity returns
+        window.addEventListener("online", () => this.syncPendingLogs({ auto: true }));
+        if (navigator.onLine) this.syncPendingLogs({ auto: true });
+      },
+
+      migrateState(parsed) {
+        const base = JSON.parse(JSON.stringify(DEFAULT_DB));
+        return {
+          ...base,
+          ...parsed,
+          schemaVersion: base.schemaVersion,
+          config: { ...base.config, ...(parsed.config || {}) },
+          exercises: { ...base.exercises, ...(parsed.exercises || {}) },
+          templates: { ...base.templates, ...(parsed.templates || {}) },
+          strengthHistory: Array.isArray(parsed.strengthHistory) ? parsed.strengthHistory : base.strengthHistory,
+          cardioHistory: Array.isArray(parsed.cardioHistory) ? parsed.cardioHistory : base.cardioHistory,
+          pendingQueue: Array.isArray(parsed.pendingQueue) ? parsed.pendingQueue : [],
+          activeDraft: parsed.activeDraft || null
+        };
       },
 
       saveState() {
@@ -1411,8 +1481,8 @@ function jsonResponse(obj) {
             const pairRows = pair.map(item => {
               const ex = this.state.exercises[item.exerciseId];
               return `<div class="flex items-center justify-between text-xs text-zinc-200 py-0.5">
-                <span class="truncate pr-2"><strong class="font-mono text-ios-blue mr-1.5">${item.supersetGroup}</strong>${ex ? ex.name : item.exerciseId}</span>
-                <span class="font-mono text-[11px] text-zinc-400 shrink-0">${item.targetSets}×${item.targetReps}</span>
+                <span class="truncate pr-2"><strong class="font-mono text-ios-blue mr-1.5">${esc(item.supersetGroup)}</strong>${esc(ex ? ex.name : item.exerciseId)}</span>
+                <span class="font-mono text-[11px] text-zinc-400 shrink-0">${esc(item.targetSets)}×${esc(item.targetReps)}</span>
               </div>`;
             }).join("");
 
@@ -1428,19 +1498,19 @@ function jsonResponse(obj) {
             <div onclick="app.startStrengthWorkout('${tpl.id}')" class="p-4 rounded-2xl bg-ios-card hover:bg-ios-elevated border border-ios-border transition cursor-pointer flex flex-col justify-between active:scale-[0.99]">
               <div>
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md border ${colors.badge}">${tpl.badge}</span>
+                  <span class="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md border ${colors.badge}">${esc(tpl.badge)}</span>
                   <span class="text-[11px] font-mono text-zinc-400 flex items-center gap-1">
                     <i data-lucide="calendar" class="w-3 h-3"></i> ${lastDateStr}
                   </span>
                 </div>
-                <h3 class="font-bold text-base text-white">${tpl.name}</h3>
-                <p class="text-xs text-zinc-400 mb-3">${tpl.subtitle}</p>
+                <h3 class="font-bold text-base text-white">${esc(tpl.name)}</h3>
+                <p class="text-xs text-zinc-400 mb-3">${esc(tpl.subtitle)}</p>
                 <div class="space-y-2 pt-1">
                   ${exPreviews}
                 </div>
               </div>
               <div class="mt-3.5 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs font-bold text-ios-blue">
-                <span>Start ${tpl.name}</span>
+                <span>Start ${esc(tpl.name)}</span>
                 <i data-lucide="arrow-right" class="w-4 h-4"></i>
               </div>
             </div>
@@ -1483,14 +1553,14 @@ function jsonResponse(obj) {
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-ios-blue"></span>
-                      <h4 class="font-bold text-xs text-white">${item.templateName || item.templateId}</h4>
+                      <h4 class="font-bold text-xs text-white">${esc(item.templateName || item.templateId)}</h4>
                     </div>
                     <div class="flex items-center gap-2">
                       ${syncBadge}
                       <span class="text-[11px] font-mono text-zinc-400">${dateStr}</span>
                     </div>
                   </div>
-                  <p class="text-[11px] text-zinc-400 mt-1">${totalSets} completed sets • Top load: ${topWeight} lbs ${item.notes ? `• "${item.notes}"` : ""}</p>
+                  <p class="text-[11px] text-zinc-400 mt-1">${totalSets} completed sets • Top load: ${topWeight} lbs ${item.notes ? `• "${esc(item.notes)}"` : ""}</p>
                   ${hrBadges}
                 </div>
               `;
@@ -1500,7 +1570,7 @@ function jsonResponse(obj) {
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-ios-pink"></span>
-                      <h4 class="font-bold text-xs text-white">${item.modality}</h4>
+                      <h4 class="font-bold text-xs text-white">${esc(item.modality)}</h4>
                     </div>
                     <div class="flex items-center gap-2">
                       ${syncBadge}
@@ -1508,9 +1578,9 @@ function jsonResponse(obj) {
                     </div>
                   </div>
                   <p class="text-[11px] text-zinc-300 font-mono mt-1">
-                    ${item.durationMin || 0} min • ${item.distanceMi || 0} mi ${item.inclinePct ? `• ${item.inclinePct}% Incline` : ""} ${item.paceOrSpeed ? `@ ${item.paceOrSpeed}` : ""}
+                    ${esc(item.durationMin || 0)} min • ${esc(item.distanceMi || 0)} mi ${item.inclinePct ? `• ${esc(item.inclinePct)}% Incline` : ""} ${item.paceOrSpeed ? `@ ${esc(item.paceOrSpeed)}` : ""}
                   </p>
-                  ${item.intervalNotes ? `<p class="text-[11px] text-zinc-400 mt-0.5">${item.intervalNotes}</p>` : ""}
+                  ${item.intervalNotes ? `<p class="text-[11px] text-zinc-400 mt-0.5">${esc(item.intervalNotes)}</p>` : ""}
                   ${hrBadges}
                 </div>
               `;
@@ -1539,7 +1609,7 @@ function jsonResponse(obj) {
         const tpl = this.state.templates[templateId];
         if (!tpl) return;
 
-        const sessionId = "SES_" + Math.random().toString(36).substring(2, 7).toUpperCase();
+        const sessionId = newId("SES");
         const exercisesDraft = tpl.items.map(item => {
           const ex = this.state.exercises[item.exerciseId] || {
             id: item.exerciseId,
@@ -1558,10 +1628,12 @@ function jsonResponse(obj) {
             const ghost = this.getGhostSetForExercise(item.exerciseId, s);
             const gWeight = ghost !== null && ghost.weight !== undefined ? ghost.weight : fallbackWeight;
             const gReps = ghost !== null && ghost.reps !== undefined ? ghost.reps : fallbackReps;
+            // Last session's numbers are shown as placeholders only; a set is
+            // logged only once the user checks it off.
             sets.push({
               setNumber: s,
-              weight: ghost ? ghost.weight : "",
-              reps: ghost ? ghost.reps : "",
+              weight: "",
+              reps: "",
               ghostWeight: gWeight,
               ghostReps: gReps,
               completed: false
@@ -1654,7 +1726,7 @@ function jsonResponse(obj) {
                   <!-- Set Number & Ghost Reference -->
                   <div class="col-span-3 flex flex-col">
                     <span class="text-xs font-mono font-bold ${isDone ? 'text-ios-green' : 'text-zinc-300'}">SET ${setObj.setNumber}</span>
-                    <span class="text-[10px] font-mono text-zinc-500">Last: ${setObj.ghostWeight}×${setObj.ghostReps}</span>
+                    <span class="text-[10px] font-mono text-zinc-500">Last: ${esc(setObj.ghostWeight)}×${esc(setObj.ghostReps)}</span>
                   </div>
 
                   <!-- Weight Input + Quick Stepper -->
@@ -1662,8 +1734,8 @@ function jsonResponse(obj) {
                     <div class="flex items-center bg-ios-card rounded-lg border border-zinc-800 px-1.5 py-1">
                       <button type="button" onclick="app.stepSetWeight(${ex.exIdx}, ${setIdx}, -5)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">-</button>
                       <input type="number" step="2.5" inputmode="decimal"
-                        value="${setObj.weight}"
-                        placeholder="${setObj.ghostWeight}"
+                        value="${esc(setObj.weight)}"
+                        placeholder="${esc(setObj.ghostWeight)}"
                         oninput="app.updateSetField(${ex.exIdx}, ${setIdx}, 'weight', this.value)"
                         class="w-full text-center bg-transparent font-mono text-sm font-bold text-white focus:outline-none placeholder:text-zinc-600" />
                       <button type="button" onclick="app.stepSetWeight(${ex.exIdx}, ${setIdx}, 5)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">+</button>
@@ -1675,8 +1747,8 @@ function jsonResponse(obj) {
                     <div class="flex items-center bg-ios-card rounded-lg border border-zinc-800 px-1.5 py-1">
                       <button type="button" onclick="app.stepSetReps(${ex.exIdx}, ${setIdx}, -1)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">-</button>
                       <input type="number" inputmode="numeric"
-                        value="${setObj.reps}"
-                        placeholder="${setObj.ghostReps}"
+                        value="${esc(setObj.reps)}"
+                        placeholder="${esc(setObj.ghostReps)}"
                         oninput="app.updateSetField(${ex.exIdx}, ${setIdx}, 'reps', this.value)"
                         class="w-full text-center bg-transparent font-mono text-sm font-bold text-white focus:outline-none placeholder:text-zinc-600" />
                       <button type="button" onclick="app.stepSetReps(${ex.exIdx}, ${setIdx}, 1)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">+</button>
@@ -1698,19 +1770,19 @@ function jsonResponse(obj) {
                 <div class="flex items-start justify-between gap-2">
                   <div>
                     <div class="flex items-center gap-2">
-                      <span class="px-2 py-0.5 rounded-md text-xs font-mono font-extrabold bg-ios-blue/20 text-ios-blue border border-ios-blue/30">${ex.supersetGroup}</span>
-                      <h4 class="font-bold text-sm text-white">${ex.name}</h4>
+                      <span class="px-2 py-0.5 rounded-md text-xs font-mono font-extrabold bg-ios-blue/20 text-ios-blue border border-ios-blue/30">${esc(ex.supersetGroup)}</span>
+                      <h4 class="font-bold text-sm text-white">${esc(ex.name)}</h4>
                     </div>
 
                     <!-- Inline Editable Equipment & Setup Badge -->
                     <button type="button" onclick="app.openEditSetupModal('${ex.exerciseId}')" class="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ios-elevated hover:bg-zinc-800 border border-ios-border text-[11px] text-zinc-300 transition">
                       <i data-lucide="sliders-horizontal" class="w-3 h-3 text-ios-blue"></i>
-                      <span>${currentSetupNotes || ex.equipment}</span>
+                      <span>${esc(currentSetupNotes || ex.equipment)}</span>
                       <i data-lucide="pencil" class="w-2.5 h-2.5 text-zinc-500"></i>
                     </button>
                   </div>
 
-                  <span class="text-[11px] font-mono text-zinc-400 shrink-0">Target: ${ex.targetSets || ex.sets.length} × ${ex.targetReps}</span>
+                  <span class="text-[11px] font-mono text-zinc-400 shrink-0">Target: ${esc(ex.targetSets || ex.sets.length)} × ${esc(ex.targetReps)}</span>
                 </div>
 
                 <!-- Column Headers -->
@@ -1747,9 +1819,9 @@ function jsonResponse(obj) {
               <div class="absolute left-0 top-0 bottom-0 w-1.5 ${isSuperset ? 'bg-gradient-to-b from-ios-blue via-ios-purple to-ios-blue' : 'bg-zinc-700'}"></div>
               <div class="flex items-center justify-between border-b border-zinc-800/80 pb-2">
                 <span class="text-xs font-mono font-bold uppercase tracking-wider ${isSuperset ? 'text-ios-blue' : 'text-zinc-400'}">
-                  ${isSuperset ? `SS${groupKey} • Superset (${items.map(i => i.supersetGroup).join(' + ')})` : `Block ${groupKey}`}
+                  ${isSuperset ? `SS${esc(groupKey)} • Superset (${items.map(i => esc(i.supersetGroup)).join(' + ')})` : `Block ${esc(groupKey)}`}
                 </span>
-                <span class="text-[10px] font-mono text-zinc-500">Alternate ${items.map(i => i.supersetGroup).join(' ↔ ')}</span>
+                <span class="text-[10px] font-mono text-zinc-500">Alternate ${items.map(i => esc(i.supersetGroup)).join(' ↔ ')}</span>
               </div>
               ${exercisesHtml}
             </div>
@@ -1803,10 +1875,10 @@ function jsonResponse(obj) {
         const prevSet = ex.sets[ex.sets.length - 1] || { weight: 45, reps: 10, ghostWeight: 45, ghostReps: 10 };
         ex.sets.push({
           setNumber: nextNum,
-          weight: prevSet.weight,
-          reps: prevSet.reps,
-          ghostWeight: prevSet.ghostWeight,
-          ghostReps: prevSet.ghostReps,
+          weight: "",
+          reps: "",
+          ghostWeight: prevSet.weight !== "" && prevSet.weight !== undefined ? prevSet.weight : prevSet.ghostWeight,
+          ghostReps: prevSet.reps !== "" && prevSet.reps !== undefined ? prevSet.reps : prevSet.ghostReps,
           completed: false
         });
         this.saveState();
@@ -1865,26 +1937,21 @@ function jsonResponse(obj) {
         const draft = this.state.activeDraft;
         if (!draft) return;
 
-        // Collect all completed sets (or sets with weight/reps entered)
+        // Collect only sets the user explicitly checked off
         const flatSets = [];
         draft.exercises.forEach(ex => {
           const masterEx = this.state.exercises[ex.exerciseId];
           const setupNotes = masterEx ? masterEx.setupNotes : ex.setupNotes;
           ex.sets.forEach(s => {
-            if (s.completed || (s.weight !== "" && s.reps !== "")) {
+            if (s.completed) {
               flatSets.push({
-                exercise_id: ex.exerciseId,
                 exerciseId: ex.exerciseId,
-                exercise_name: ex.name,
                 exerciseName: ex.name,
-                superset_group: ex.supersetGroup,
                 supersetGroup: ex.supersetGroup,
-                set_number: s.setNumber,
                 setNumber: s.setNumber,
-                weight_lbs: Number(s.weight || s.ghostWeight),
-                weight: Number(s.weight || s.ghostWeight),
-                reps: Number(s.reps || s.ghostReps),
-                setup_notes: setupNotes
+                weight: Number(s.weight !== "" ? s.weight : s.ghostWeight),
+                reps: Number(s.reps !== "" ? s.reps : s.ghostReps),
+                setupNotes: setupNotes || ""
               });
             }
           });
@@ -1922,7 +1989,15 @@ function jsonResponse(obj) {
           max_hr: sessionRecord.maxHr || "",
           active_cals: sessionRecord.activeCals || "",
           notes: sessionRecord.notes,
-          sets: flatSets
+          sets: flatSets.map(s => ({
+            exercise_id: s.exerciseId,
+            exercise_name: s.exerciseName,
+            superset_group: s.supersetGroup,
+            set_number: s.setNumber,
+            weight_lbs: s.weight,
+            reps: s.reps,
+            setup_notes: s.setupNotes
+          }))
         };
 
         this.saveState();
@@ -1932,7 +2007,7 @@ function jsonResponse(obj) {
 
       // ==================== ACTIVE CARDIO / INTERVAL WORKOUT LOGIC ====================
       startCardioWorkout(modality) {
-        const sessionId = "CRD_" + Math.random().toString(36).substring(2, 7).toUpperCase();
+        const sessionId = newId("CRD");
         this.state.activeDraft = {
           type: "cardio",
           sessionId,
@@ -2084,6 +2159,7 @@ function jsonResponse(obj) {
       },
 
       discardActiveWorkout() {
+        if (!confirm("Discard this workout? Unsaved sets will be lost.")) return;
         this.state.activeDraft = null;
         this.saveState();
         this.navigate("dashboard");
@@ -2116,6 +2192,8 @@ function jsonResponse(obj) {
               this.resumeDraft();
               this.showToast(`Apple Watch synced: ${avgHr || '--'} Avg / ${maxHr || '--'} Max BPM`, "heart-pulse", "text-ios-pink");
             }, 250);
+          } else {
+            setTimeout(() => this.showToast("Watch data received, but no workout is in progress", "alert-circle", "text-ios-orange"), 250);
           }
           // Clean URL query params
           window.history.replaceState({}, document.title, window.location.pathname);
@@ -2164,49 +2242,136 @@ function jsonResponse(obj) {
         }
       },
 
-      async pushPayloadToGoogleSheets(payload, sessionId) {
+      enqueuePending(sessionId, payload) {
+        if (!this.state.pendingQueue.some(q => q.sessionId === sessionId)) {
+          this.state.pendingQueue.push({ sessionId, payload });
+        }
+      },
+
+      async pushPayloadToGoogleSheets(payload, sessionId, { silent = false } = {}) {
         const url = (this.state.config.webhookUrl || "").trim();
         if (!url) {
-          this.showToast("Saved locally! Connect Google Sheets anytime to sync.", "check-circle-2", "text-ios-blue");
-          return;
+          // Queue so it uploads once a Sheet is connected
+          this.enqueuePending(sessionId, payload);
+          this.saveState();
+          if (!silent) this.showToast("Saved locally! Connect Google Sheets anytime to sync.", "check-circle-2", "text-ios-blue");
+          return false;
         }
 
         try {
-          this.showToast("Syncing workout to Google Sheets...", "upload-cloud", "text-ios-blue");
-          // Using text/plain avoids CORS preflight rejection on Google Apps Script Web Apps
-          await fetch(url, {
+          if (!silent) this.showToast("Syncing workout to Google Sheets...", "upload-cloud", "text-ios-blue");
+          // text/plain avoids a CORS preflight; Apps Script's redirected response is CORS-readable,
+          // so we can verify the server actually accepted the write.
+          const res = await fetch(url, {
             method: "POST",
-            mode: "no-cors",
             headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ ...payload, secret: this.state.config.secretKey || "" })
           });
+          let data = null;
+          try { data = await res.json(); } catch (e) {
+            throw new Error("Unexpected response (check Web App access = 'Anyone')");
+          }
+          if (!res.ok || !data || data.status !== "ok") {
+            throw new Error((data && data.message) || `HTTP ${res.status}`);
+          }
 
-          // Mark session as synced
           const sLog = this.state.strengthHistory.find(s => s.sessionId === sessionId);
           if (sLog) sLog.synced = true;
           const cLog = this.state.cardioHistory.find(c => c.sessionId === sessionId);
           if (cLog) cLog.synced = true;
+          this.state.pendingQueue = this.state.pendingQueue.filter(q => q.sessionId !== sessionId);
 
           this.saveState();
           this.renderDashboard();
-          this.showToast("Workout synced to Google Sheets!", "check-circle-2", "text-ios-green");
+          if (!silent) this.showToast("Workout synced to Google Sheets!", "check-circle-2", "text-ios-green");
+          return true;
         } catch (err) {
-          this.state.pendingQueue.push({ sessionId, payload });
+          this.enqueuePending(sessionId, payload);
           this.saveState();
-          this.showToast("Offline — queued for automatic retry", "wifi-off", "text-ios-orange");
+          if (!silent) this.showToast(`Sync failed: ${err.message}. Queued for retry.`, "wifi-off", "text-ios-orange");
+          return false;
         }
       },
 
-      async syncPendingLogs() {
+      async syncPendingLogs({ auto = false } = {}) {
+        if (this._syncing || this.state.pendingQueue.length === 0) return;
         if (!this.state.config.webhookUrl) {
-          this.openModal("setupModal", "webhook");
+          if (!auto) this.openModal("setupModal", "webhook");
           return;
         }
-        const queue = [...this.state.pendingQueue];
-        this.state.pendingQueue = [];
-        for (const item of queue) {
-          await this.pushPayloadToGoogleSheets(item.payload, item.sessionId);
+        this._syncing = true;
+        try {
+          const queue = [...this.state.pendingQueue];
+          let ok = 0;
+          for (const item of queue) {
+            if (await this.pushPayloadToGoogleSheets(item.payload, item.sessionId, { silent: true })) ok++;
+          }
+          const failed = queue.length - ok;
+          if (failed === 0) this.showToast(`Synced ${ok} queued workout${ok === 1 ? "" : "s"}`, "check-circle-2", "text-ios-green");
+          else if (!auto) this.showToast(`${failed} workout${failed === 1 ? "" : "s"} still failed to sync`, "alert-triangle", "text-ios-orange");
+        } finally {
+          this._syncing = false;
         }
+      },
+
+      importSheetLogs(data) {
+        const known = new Set([...this.state.strengthHistory, ...this.state.cardioHistory].map(s => String(s.sessionId)));
+        const toIso = (v) => { const d = new Date(v); return isNaN(d) ? new Date().toISOString() : d.toISOString(); };
+        const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+
+        const groups = {};
+        (data.strength_logs || []).forEach(r => {
+          const id = String(r.Session_ID || "");
+          if (!id || known.has(id)) return;
+          if (!groups[id]) {
+            const tpl = this.state.templates[r.Template_ID];
+            groups[id] = {
+              sessionId: id,
+              timestamp: toIso(r.Timestamp),
+              templateId: r.Template_ID,
+              templateName: tpl ? tpl.name : r.Template_ID,
+              avgHr: numOrNull(r.Session_Avg_HR),
+              maxHr: numOrNull(r.Session_Max_HR),
+              activeCals: numOrNull(r.Active_Cals),
+              notes: r.Notes || "",
+              synced: true,
+              sets: []
+            };
+          }
+          groups[id].sets.push({
+            exerciseId: r.Exercise_ID,
+            exerciseName: r.Exercise_Name,
+            supersetGroup: r.Superset_Group,
+            setNumber: Number(r.Set_Number),
+            weight: Number(r.Weight_Lbs) || 0,
+            reps: Number(r.Reps) || 0,
+            setupNotes: r.Setup_Notes || ""
+          });
+        });
+
+        const cardio = (data.cardio_logs || [])
+          .filter(r => r.Session_ID && !known.has(String(r.Session_ID)))
+          .map(r => ({
+            sessionId: String(r.Session_ID),
+            timestamp: toIso(r.Timestamp),
+            modality: r.Modality,
+            durationMin: Number(r.Duration_Min) || 0,
+            distanceMi: Number(r.Distance_Mi) || 0,
+            inclinePct: Number(r.Incline_Pct) || 0,
+            paceOrSpeed: r.Avg_Pace_or_Speed || "",
+            intervalNotes: r.Interval_Split_Notes || "",
+            avgHr: numOrNull(r.Avg_HR),
+            maxHr: numOrNull(r.Max_HR),
+            activeCals: numOrNull(r.Active_Cals),
+            synced: true
+          }));
+
+        const strength = Object.values(groups);
+        const byNewest = (a, b) => new Date(b.timestamp) - new Date(a.timestamp);
+        // History must stay newest-first: ghost-set lookup depends on it
+        this.state.strengthHistory = [...this.state.strengthHistory, ...strength].sort(byNewest);
+        this.state.cardioHistory = [...this.state.cardioHistory, ...cardio].sort(byNewest);
+        return { strength: strength.length, cardio: cardio.length };
       },
 
       async pullFromGoogleSheets() {
@@ -2217,13 +2382,18 @@ function jsonResponse(obj) {
         }
         try {
           this.showToast("Fetching logs from Google Sheets...", "cloud-download", "text-ios-blue");
-          const res = await fetch(url);
+          const sep = url.includes("?") ? "&" : "?";
+          const res = await fetch(`${url}${sep}secret=${encodeURIComponent(this.state.config.secretKey || "")}`);
           const data = await res.json();
-          if (data && data.status === "ok") {
-            this.showToast(`Connected! Sheet has ${(data.strength_logs || []).length} sets & ${(data.cardio_logs || []).length} cardio logs.`, "check-circle-2", "text-ios-green");
+          if (!data || data.status !== "ok") {
+            throw new Error((data && data.message) || "Unexpected response");
           }
+          const added = this.importSheetLogs(data);
+          this.saveState();
+          this.renderDashboard();
+          this.showToast(`Imported ${added.strength} strength & ${added.cardio} cardio sessions from Sheet`, "check-circle-2", "text-ios-green");
         } catch (e) {
-          this.showToast("Could not reach Apps Script URL. Check deployment access = 'Anyone'.", "alert-triangle", "text-ios-red");
+          this.showToast(`Pull failed: ${e.message}. Check URL, secret & access = 'Anyone'.`, "alert-triangle", "text-ios-red");
         }
       },
 
@@ -2236,7 +2406,14 @@ function jsonResponse(obj) {
         this.showToast("Sheets Webhook & Shortcut config saved");
       },
 
-      copyGasCode() {
+      async copyGasCode() {
+        if (navigator.clipboard && window.isSecureContext) {
+          try {
+            await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_CODE);
+            this.showToast("Code.gs copied to clipboard!", "copy", "text-ios-blue");
+            return;
+          } catch (e) { /* fall through to legacy copy */ }
+        }
         const temp = document.createElement("textarea");
         temp.value = GOOGLE_APPS_SCRIPT_CODE;
         document.body.appendChild(temp);
@@ -2261,7 +2438,7 @@ function jsonResponse(obj) {
           return;
         }
 
-        const exId = "EX_" + name.toUpperCase().replace(/[^A-Z0-9]/g, "_").substring(0, 16) + "_" + Math.floor(Math.random() * 99);
+        const exId = newId("EX_" + name.toUpperCase().replace(/[^A-Z0-9]/g, "_").substring(0, 16));
         this.state.exercises[exId] = {
           id: exId,
           name,
@@ -2307,6 +2484,8 @@ function jsonResponse(obj) {
       },
 
       resetDefaultDatabase() {
+        if (!confirm("Reset to default templates? This permanently erases ALL local workout history, custom exercises and settings.")) return;
+        localStorage.setItem(`${STORAGE_KEY}_PRE_RESET_BACKUP`, JSON.stringify(this.state));
         this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
         this.saveState();
         this.closeModal("customizerModal");
@@ -2315,14 +2494,15 @@ function jsonResponse(obj) {
       },
 
       exportCSV() {
-        let csv = "Type,Timestamp,Session_ID,Template_or_Modality,Exercise,Superset,Set,Weight_Lbs,Reps,Duration_Min,Distance_Mi,Incline_Pct,Avg_HR,Max_HR,Active_Cals,Notes\n";
+        const row = (cells) => cells.map(csvCell).join(",") + "\r\n";
+        let csv = row(["Type", "Timestamp", "Session_ID", "Template_or_Modality", "Exercise", "Superset", "Set", "Weight_Lbs", "Reps", "Duration_Min", "Distance_Mi", "Incline_Pct", "Pace_or_Speed", "Avg_HR", "Max_HR", "Active_Cals", "Notes"]);
         this.state.strengthHistory.forEach(s => {
           (s.sets || []).forEach(set => {
-            csv += `Strength,${s.timestamp},${s.sessionId},"${s.templateName}","${set.exerciseName}",${set.supersetGroup},${set.setNumber},${set.weight},${set.reps},,,,${s.avgHr || ""},${s.maxHr || ""},${s.activeCals || ""},"${(s.notes || "").replace(/"/g, '""')}"\n`;
+            csv += row(["Strength", s.timestamp, s.sessionId, s.templateName, set.exerciseName, set.supersetGroup, set.setNumber, set.weight, set.reps, "", "", "", "", s.avgHr, s.maxHr, s.activeCals, s.notes]);
           });
         });
         this.state.cardioHistory.forEach(c => {
-          csv += `Cardio,${c.timestamp},${c.sessionId},"${c.modality}",,,,, ,${c.durationMin},${c.distanceMi},${c.inclinePct},${c.avgHr || ""},${c.maxHr || ""},${c.activeCals || ""},"${(c.intervalNotes || "").replace(/"/g, '""')}"\n`;
+          csv += row(["Cardio", c.timestamp, c.sessionId, c.modality, "", "", "", "", "", c.durationMin, c.distanceMi, c.inclinePct, c.paceOrSpeed, c.avgHr, c.maxHr, c.activeCals, c.intervalNotes]);
         });
 
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -2331,6 +2511,7 @@ function jsonResponse(obj) {
         a.href = url;
         a.download = `pulsesheet_workouts_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
         this.showToast("Exported workout history CSV");
       },
 
