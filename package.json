@@ -1,0 +1,14 @@
+{
+  "name": "pulsesheet",
+  "private": true,
+  "version": "1.0.0",
+  "description": "PulseSheet — local-first iOS workout logger PWA",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./styles.css --minify",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./styles.css --watch",
+    "serve": "npx -y serve ."
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

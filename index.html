@@ -8,41 +8,19 @@
   <meta name="apple-mobile-web-app-title" content="PulseSheet" />
   <meta name="theme-color" content="#09090b" />
   <title>PulseSheet — iOS Workout & Watch Logger</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <meta name="description" content="Local-first strength and cardio workout logger with Google Sheets sync and Apple Watch heart-rate import." />
+  <!-- PWA manifest & home-screen icons -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <!-- Tailwind CSS (prebuilt: `npm run build:css` regenerates styles.css) -->
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Lucide Icons (vendored v0.460.0) -->
+  <script src="vendor/lucide.min.js"></script>
   <!-- Google Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          colors: {
-            ios: {
-              bg: '#09090b',
-              card: '#141418',
-              elevated: '#1c1c22',
-              border: '#272730',
-              blue: '#0A84FF',
-              green: '#30D158',
-              red: '#FF453A',
-              orange: '#FF9F0A',
-              purple: '#BF5AF2',
-              pink: '#FF375F'
-            }
-          }
-        }
-      }
-    }
-  </script>
   <style>
     * {
       -webkit-tap-highlight-color: transparent;
@@ -2542,6 +2520,13 @@ function jsonResponse(obj) {
     };
 
     window.addEventListener("DOMContentLoaded", () => app.init());
+
+    // Offline support (requires HTTPS or localhost; skipped for file://)
+    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(err => console.warn("SW registration failed", err));
+      });
+    }
   </script>
 </body>
 </html>
