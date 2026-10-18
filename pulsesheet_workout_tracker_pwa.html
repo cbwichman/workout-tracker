@@ -1,0 +1,2368 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PulseSheet" />
+  <meta name="theme-color" content="#09090b" />
+  <title>PulseSheet — iOS Workout & Watch Logger</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            ios: {
+              bg: '#09090b',
+              card: '#141418',
+              elevated: '#1c1c22',
+              border: '#272730',
+              blue: '#0A84FF',
+              green: '#30D158',
+              red: '#FF453A',
+              orange: '#FF9F0A',
+              purple: '#BF5AF2',
+              pink: '#FF375F'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: #09090b;
+      color: #f4f4f5;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overscroll-behavior-y: none;
+    }
+    /* Hide number input arrows for clean iOS look */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+    .safe-bottom {
+      padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    }
+    .safe-top {
+      padding-top: max(1rem, env(safe-area-inset-top));
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #09090b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #272730;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-ios-blue selection:text-white">
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="sticky top-0 z-30 bg-ios-bg/85 backdrop-blur-xl border-b border-ios-border safe-top">
+    <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5 cursor-pointer" onclick="app.navigate('dashboard')">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-ios-blue to-ios-purple flex items-center justify-center shadow-lg shadow-ios-blue/20">
+          <i data-lucide="activity" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base tracking-tight text-white">PulseSheet</h1>
+            <span class="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">No-Timer PWA</span>
+          </div>
+          <p id="syncStatusSub" class="text-[11px] text-zinc-400 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-ios-green inline-block"></span>
+            <span>Local-First Ready</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <!-- Pending Sync Queue Button (shown when unsynced logs exist) -->
+        <button id="retrySyncBtn" onclick="app.syncPendingLogs()" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-ios-orange/15 border border-ios-orange/40 text-ios-orange text-xs font-medium active:scale-95 transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span id="pendingCountBadge">0</span>
+        </button>
+
+        <!-- Template & Exercise Customizer Button -->
+        <button onclick="app.openModal('customizerModal')" class="p-2 rounded-xl bg-ios-card border border-ios-border text-zinc-300 hover:text-white active:scale-95 transition" title="Customize Exercises">
+          <i data-lucide="Sliders" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Backend & Shortcut Setup Modal Button -->
+        <button onclick="app.openModal('setupModal')" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-ios-card border border-ios-border text-xs font-semibold text-zinc-200 hover:border-ios-blue/50 active:scale-95 transition">
+          <i data-lucide="database" class="w-3.5 h-3.5 text-ios-blue"></i>
+          <span>Sheets & Watch</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- TOAST NOTIFICATION BANNER -->
+  <div id="toastContainer" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 pointer-events-none transition-all duration-300 opacity-0 -translate-y-2">
+    <div id="toastBox" class="px-4 py-3 rounded-2xl bg-zinc-900/95 backdrop-blur-md border border-zinc-700 shadow-2xl flex items-center gap-3 text-xs font-medium text-white">
+      <i id="toastIcon" data-lucide="check-circle-2" class="w-4 h-4 text-ios-green shrink-0"></i>
+      <span id="toastMessage">Saved</span>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="flex-1 max-w-lg w-full mx-auto px-4 pt-4 pb-24 safe-bottom">
+
+    <!-- ==================== VIEW 1: DASHBOARD ==================== -->
+    <section id="view-dashboard" class="space-y-6">
+
+      <!-- Active Draft Banner (if workout in progress) -->
+      <div id="activeDraftBanner" class="hidden p-4 rounded-2xl bg-gradient-to-r from-ios-blue/20 via-ios-purple/15 to-ios-pink/15 border border-ios-blue/40 items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-ios-blue/20 border border-ios-blue/40 flex items-center justify-center text-ios-blue">
+            <i data-lucide="flame" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-ios-blue">Session In Progress</p>
+            <h3 id="draftTitleText" class="text-sm font-bold text-white">Push A — Chest, Shoulders & Triceps</h3>
+          </div>
+        </div>
+        <button onclick="app.resumeDraft()" class="px-3.5 py-2 rounded-xl bg-ios-blue text-white text-xs font-bold shadow-lg shadow-ios-blue/25 active:scale-95 transition">
+          Resume
+        </button>
+      </div>
+
+      <!-- Mode Switcher Pills -->
+      <div class="p-1 rounded-2xl bg-ios-card border border-ios-border grid grid-cols-2 gap-1">
+        <button id="tabBtn-strength" onclick="app.switchDashboardTab('strength')" class="py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-ios-elevated text-white shadow">
+          <i data-lucide="dumbbell" class="w-4 h-4 text-ios-blue"></i>
+          <span>Strength Split (P/L/P)</span>
+        </button>
+        <button id="tabBtn-cardio" onclick="app.switchDashboardTab('cardio')" class="py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-zinc-400 hover:text-white">
+          <i data-lucide="heart-pulse" class="w-4 h-4 text-ios-pink"></i>
+          <span>Cardio & Intervals</span>
+        </button>
+      </div>
+
+      <!-- STRENGTH SPLIT TEMPLATES GRID -->
+      <div id="dash-strength-panel" class="space-y-3.5">
+        <div class="flex items-center justify-between px-1">
+          <div>
+            <h2 class="text-sm font-bold text-zinc-100">Select Today's Split</h2>
+            <p class="text-xs text-zinc-400">3-Day Push / Legs / Pull • 3 Supersets per session</p>
+          </div>
+          <!-- Week A / Week B / All Filter Toggle -->
+          <div class="inline-flex p-1 rounded-xl bg-ios-card border border-ios-border text-[11px] font-bold">
+            <button id="weekBtn-A" onclick="app.setWeekFilter('A')" class="px-2.5 py-1 rounded-lg bg-ios-blue text-white transition">Week A</button>
+            <button id="weekBtn-B" onclick="app.setWeekFilter('B')" class="px-2.5 py-1 rounded-lg text-zinc-400 hover:text-white transition">Week B</button>
+            <button id="weekBtn-ALL" onclick="app.setWeekFilter('ALL')" class="px-2.5 py-1 rounded-lg text-zinc-400 hover:text-white transition">All 6</button>
+          </div>
+        </div>
+
+        <div id="strengthTemplatesGrid" class="grid grid-cols-1 gap-3">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+
+      <!-- CARDIO & INTERVALS PANEL -->
+      <div id="dash-cardio-panel" class="hidden space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <div>
+            <h2 class="text-sm font-bold text-zinc-100">Start Cardio / Interval Session</h2>
+            <p class="text-xs text-zinc-400">Log incline, pace & splits + sync Apple Watch HR</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3">
+          <!-- Treadmill Incline Card -->
+          <button onclick="app.startCardioWorkout('Treadmill Incline')" class="w-full text-left p-4 rounded-2xl bg-ios-card hover:bg-ios-elevated border border-ios-border transition flex items-center justify-between group active:scale-[0.99]">
+            <div class="flex items-center gap-3.5">
+              <div class="w-11 h-11 rounded-2xl bg-ios-orange/15 border border-ios-orange/30 flex items-center justify-center text-ios-orange">
+                <i data-lucide="trending-up" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-bold text-sm text-white">Treadmill Incline Walk / Hike</h3>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-ios-orange/15 text-ios-orange">Zone 2 / Incline</span>
+                </div>
+                <p class="text-xs text-zinc-400 mt-0.5">Manual Incline %, Speed (mph), Duration + Watch HR</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-zinc-500 group-hover:text-white transition"></i>
+          </button>
+
+          <!-- VO2 Max Intervals Card -->
+          <button onclick="app.startCardioWorkout('VO2 Max Intervals')" class="w-full text-left p-4 rounded-2xl bg-ios-card hover:bg-ios-elevated border border-ios-border transition flex items-center justify-between group active:scale-[0.99]">
+            <div class="flex items-center gap-3.5">
+              <div class="w-11 h-11 rounded-2xl bg-ios-pink/15 border border-ios-pink/30 flex items-center justify-center text-ios-pink">
+                <i data-lucide="zap" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-bold text-sm text-white">VO2 Max / HIIT Intervals</h3>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-ios-pink/15 text-ios-pink">4x4 / Norwegian</span>
+                </div>
+                <p class="text-xs text-zinc-400 mt-0.5">Work/recovery split notes, peak speed, incline & Max HR</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-zinc-500 group-hover:text-white transition"></i>
+          </button>
+
+          <!-- Outdoor Run Card -->
+          <button onclick="app.startCardioWorkout('Outdoor Run')" class="w-full text-left p-4 rounded-2xl bg-ios-card hover:bg-ios-elevated border border-ios-border transition flex items-center justify-between group active:scale-[0.99]">
+            <div class="flex items-center gap-3.5">
+              <div class="w-11 h-11 rounded-2xl bg-ios-green/15 border border-ios-green/30 flex items-center justify-center text-ios-green">
+                <i data-lucide="footprints" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-bold text-sm text-white">Outdoor Run / Tempo</h3>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-ios-green/15 text-ios-green">Road / Trail</span>
+                </div>
+                <p class="text-xs text-zinc-400 mt-0.5">Distance (mi), Duration, Avg Pace + Watch HR & Cals</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-zinc-500 group-hover:text-white transition"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- APPLE WATCH TELEMETRY QUICK BANNER -->
+      <div class="p-4 rounded-2xl bg-ios-card border border-ios-border flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-ios-pink/15 border border-ios-pink/30 flex items-center justify-center text-ios-pink shrink-0">
+            <i data-lucide="watch" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>Apple Watch HR Bridge</span>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ios-pink/20 text-ios-pink">iOS Shortcut</span>
+            </h3>
+            <p class="text-[11px] text-zinc-400">Keep using your Watch for rest timers & HR. Pull Avg/Max HR at finish.</p>
+          </div>
+        </div>
+        <button onclick="app.openModal('setupModal', 'shortcut')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold shrink-0 transition">
+          Setup Guide
+        </button>
+      </div>
+
+      <!-- RECENT WORKOUT HISTORY LOG -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <div>
+            <h2 class="text-sm font-bold text-zinc-100">Recent Sessions</h2>
+            <p class="text-xs text-zinc-400">Stored locally & synced to Google Sheets</p>
+          </div>
+          <button onclick="app.exportCSV()" class="text-xs text-ios-blue hover:underline flex items-center gap-1 font-medium">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Export CSV</span>
+          </button>
+        </div>
+
+        <div id="recentHistoryList" class="space-y-2.5">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: ACTIVE STRENGTH WORKOUT ==================== -->
+    <section id="view-strength" class="hidden space-y-5">
+      <!-- Top Workout Header Bar -->
+      <div class="p-4 rounded-2xl bg-ios-card border border-ios-border flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2">
+            <span id="activeStrengthBadge" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-md bg-ios-blue/20 text-ios-blue font-semibold">PUSH_A</span>
+            <span id="activeStrengthSessionId" class="text-[11px] font-mono text-zinc-400"></span>
+          </div>
+          <h2 id="activeStrengthTitle" class="text-base font-bold text-white mt-1">Push A — Chest, Shoulders & Triceps</h2>
+          <p class="text-xs text-zinc-400 mt-0.5">Superset grouped • Tap setup badge to update pin/bench settings</p>
+        </div>
+        <button onclick="app.discardActiveWorkout()" class="p-2 rounded-xl bg-zinc-800/80 text-zinc-400 hover:text-ios-red transition" title="Discard Session">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Superset Groups Container -->
+      <div id="supersetGroupsContainer" class="space-y-5">
+        <!-- Rendered dynamically by renderStrengthWorkout() -->
+      </div>
+
+      <!-- Add Exercise to Active Session Button -->
+      <button onclick="app.openAddExerciseToActiveModal()" class="w-full py-3 rounded-2xl border border-dashed border-zinc-700 hover:border-ios-blue text-xs font-semibold text-zinc-400 hover:text-white flex items-center justify-center gap-2 transition">
+        <i data-lucide="plus-circle" class="w-4 h-4 text-ios-blue"></i>
+        <span>Add Exercise or Superset to Today's Session</span>
+      </button>
+
+      <!-- APPLE WATCH TELEMETRY & FINISH CARD (STRENGTH) -->
+      <div class="p-4 rounded-2xl bg-gradient-to-b from-ios-card to-ios-elevated border border-ios-border space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-ios-pink/15 border border-ios-pink/30 flex items-center justify-center text-ios-pink">
+              <i data-lucide="heart-pulse" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h3 class="text-xs font-bold text-white">Apple Watch Telemetry</h3>
+              <p class="text-[11px] text-zinc-400">Pull from Health via Shortcut or glance at Watch summary</p>
+            </div>
+          </div>
+
+          <button onclick="app.triggerWatchShortcut()" class="px-3 py-1.5 rounded-xl bg-ios-pink/20 hover:bg-ios-pink/30 border border-ios-pink/40 text-ios-pink text-xs font-bold flex items-center gap-1.5 active:scale-95 transition">
+            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+            <span>Pull Watch HR</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Avg HR (bpm)</label>
+            <input id="strengthAvgHr" type="number" inputmode="numeric" placeholder="132" oninput="app.updateDraftWatchTelemetry('avgHr', this.value)" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-white focus:outline-none placeholder:text-zinc-700" />
+          </div>
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Max HR (bpm)</label>
+            <input id="strengthMaxHr" type="number" inputmode="numeric" placeholder="164" oninput="app.updateDraftWatchTelemetry('maxHr', this.value)" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-ios-pink focus:outline-none placeholder:text-zinc-700" />
+          </div>
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Active Kcal</label>
+            <input id="strengthActiveCals" type="number" inputmode="numeric" placeholder="380" oninput="app.updateDraftWatchTelemetry('activeCals', this.value)" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-ios-orange focus:outline-none placeholder:text-zinc-700" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-medium text-zinc-400 mb-1">Session Notes (Optional)</label>
+          <input id="strengthSessionNotes" type="text" placeholder="e.g., Shoulder felt great, bump incline DB next week" oninput="app.updateDraftWatchTelemetry('notes', this.value)" class="w-full px-3 py-2 rounded-xl bg-ios-bg border border-ios-border text-xs text-white focus:outline-none focus:border-ios-blue placeholder:text-zinc-600" />
+        </div>
+
+        <button onclick="app.finishStrengthWorkout()" class="w-full py-3.5 rounded-2xl bg-ios-green hover:bg-emerald-500 text-zinc-950 font-bold text-sm shadow-lg shadow-ios-green/20 flex items-center justify-center gap-2 active:scale-[0.99] transition">
+          <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+          <span>Finish & Sync Workout to Sheets</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: ACTIVE CARDIO / INTERVAL LOGGER ==================== -->
+    <section id="view-cardio" class="hidden space-y-5">
+      <div class="p-4 rounded-2xl bg-ios-card border border-ios-border flex items-center justify-between">
+        <div>
+          <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-md bg-ios-pink/20 text-ios-pink font-semibold">CARDIO & INTERVALS</span>
+          <h2 id="activeCardioTitle" class="text-base font-bold text-white mt-1">Treadmill Incline Walk</h2>
+          <p class="text-xs text-zinc-400 mt-0.5">Manual treadmill/run metrics + Apple Watch HR telemetry</p>
+        </div>
+        <button onclick="app.discardActiveWorkout()" class="p-2 rounded-xl bg-zinc-800/80 text-zinc-400 hover:text-ios-red transition" title="Discard Session">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modality Switcher Pills -->
+      <div class="grid grid-cols-3 gap-2">
+        <button onclick="app.setCardioModality('Treadmill Incline')" id="modBtn-Treadmill Incline" class="py-2.5 px-2 rounded-xl border text-xs font-bold transition">
+          Treadmill Incline
+        </button>
+        <button onclick="app.setCardioModality('VO2 Max Intervals')" id="modBtn-VO2 Max Intervals" class="py-2.5 px-2 rounded-xl border text-xs font-bold transition">
+          VO2 Max Intervals
+        </button>
+        <button onclick="app.setCardioModality('Outdoor Run')" id="modBtn-Outdoor Run" class="py-2.5 px-2 rounded-xl border text-xs font-bold transition">
+          Outdoor Run
+        </button>
+      </div>
+
+      <!-- Last Session Reference Banner -->
+      <div id="cardioGhostBanner" class="p-3.5 rounded-2xl bg-ios-elevated/70 border border-ios-border flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2 text-zinc-300">
+          <i data-lucide="history" class="w-4 h-4 text-ios-blue shrink-0"></i>
+          <span id="cardioGhostText">Last time: 30 min • 2.2 mi • 12% Incline @ 3.4 mph (Avg 138 bpm)</span>
+        </div>
+        <button onclick="app.autofillCardioFromGhost()" class="text-[11px] font-semibold text-ios-blue hover:underline shrink-0 ml-2">
+          Fill
+        </button>
+      </div>
+
+      <!-- Manual Cardio Inputs Card -->
+      <div class="p-4 rounded-2xl bg-ios-card border border-ios-border space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-3 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[11px] font-mono uppercase text-zinc-400">Duration (Min)</label>
+            <input id="cardioDuration" type="number" step="0.5" inputmode="decimal" placeholder="30" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-xl font-bold text-white focus:outline-none placeholder:text-zinc-700" />
+          </div>
+          <div class="p-3 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[11px] font-mono uppercase text-zinc-400">Distance (Miles)</label>
+            <input id="cardioDistance" type="number" step="0.01" inputmode="decimal" placeholder="2.50" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-xl font-bold text-white focus:outline-none placeholder:text-zinc-700" />
+          </div>
+        </div>
+
+        <!-- Treadmill Incline & Speed Stepper Row -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-3 rounded-xl bg-ios-bg border border-ios-border">
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-mono uppercase text-ios-orange font-semibold">Incline (%)</label>
+              <div class="flex gap-1">
+                <button onclick="app.stepCardioField('cardioIncline', -0.5)" class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono text-zinc-300 active:scale-95">-0.5</button>
+                <button onclick="app.stepCardioField('cardioIncline', 0.5)" class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono text-zinc-300 active:scale-95">+0.5</button>
+              </div>
+            </div>
+            <input id="cardioIncline" type="number" step="0.5" inputmode="decimal" placeholder="12.0" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-xl font-bold text-ios-orange focus:outline-none placeholder:text-zinc-700" />
+          </div>
+
+          <div class="p-3 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[11px] font-mono uppercase text-ios-blue font-semibold">Speed / Pace</label>
+            <input id="cardioPace" type="text" placeholder="3.5 mph or 8:15/mi" oninput="app.updateCardioDraft()" class="w-full mt-1.5 bg-transparent font-mono text-base font-bold text-white focus:outline-none placeholder:text-zinc-700" />
+          </div>
+        </div>
+
+        <!-- Interval Structure / Split Notes -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-semibold text-zinc-300">Interval Structure & Incline Changes</label>
+            <div class="flex gap-1.5">
+              <button onclick="app.setCardioPreset('4x4 min @ 10.2 mph (2% inc) / 3 min walk @ 3.2 mph')" class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:text-white">4x4 VO2</button>
+              <button onclick="app.setCardioPreset('12% Incline • 3.2 mph • 30 min steady Zone 2')" class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:text-white">12-3-30</button>
+            </div>
+          </div>
+          <textarea id="cardioNotes" rows="3" placeholder="e.g., 10m @ 10% inc, 15m @ 12% inc, 5m cooldown OR 4x4 min intervals @ 90% HRmax" oninput="app.updateCardioDraft()" class="w-full p-3 rounded-xl bg-ios-bg border border-ios-border text-xs text-white focus:outline-none focus:border-ios-blue placeholder:text-zinc-600"></textarea>
+        </div>
+      </div>
+
+      <!-- APPLE WATCH TELEMETRY & FINISH CARD (CARDIO) -->
+      <div class="p-4 rounded-2xl bg-gradient-to-b from-ios-card to-ios-elevated border border-ios-border space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-ios-pink/15 border border-ios-pink/30 flex items-center justify-center text-ios-pink">
+              <i data-lucide="watch" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h3 class="text-xs font-bold text-white">Apple Watch Heart Rate & Calories</h3>
+              <p class="text-[11px] text-zinc-400">One-tap Shortcut pull or enter from Watch summary</p>
+            </div>
+          </div>
+
+          <button onclick="app.triggerWatchShortcut()" class="px-3 py-1.5 rounded-xl bg-ios-pink/20 hover:bg-ios-pink/30 border border-ios-pink/40 text-ios-pink text-xs font-bold flex items-center gap-1.5 active:scale-95 transition">
+            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+            <span>Pull Watch HR</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Avg HR (bpm)</label>
+            <input id="cardioAvgHr" type="number" inputmode="numeric" placeholder="148" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-white focus:outline-none placeholder:text-zinc-700" />
+          </div>
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Max HR (bpm)</label>
+            <input id="cardioMaxHr" type="number" inputmode="numeric" placeholder="182" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-ios-pink focus:outline-none placeholder:text-zinc-700" />
+          </div>
+          <div class="p-2.5 rounded-xl bg-ios-bg border border-ios-border">
+            <label class="block text-[10px] font-mono uppercase text-zinc-400">Active Kcal</label>
+            <input id="cardioActiveCals" type="number" inputmode="numeric" placeholder="420" oninput="app.updateCardioDraft()" class="w-full mt-1 bg-transparent font-mono text-base font-bold text-ios-orange focus:outline-none placeholder:text-zinc-700" />
+          </div>
+        </div>
+
+        <button onclick="app.finishCardioWorkout()" class="w-full py-3.5 rounded-2xl bg-ios-green hover:bg-emerald-500 text-zinc-950 font-bold text-sm shadow-lg shadow-ios-green/20 flex items-center justify-center gap-2 active:scale-[0.99] transition">
+          <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+          <span>Finish & Sync Cardio to Sheets</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL 1: BACKEND & iOS SHORTCUT SETUP ==================== -->
+  <div id="setupModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="w-full max-w-xl bg-ios-card border-t sm:border border-ios-border rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-ios-border flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="cpu" class="w-5 h-5 text-ios-blue"></i>
+          <h3 class="font-bold text-base text-white">Google Sheets API & Apple Watch Setup</h3>
+        </div>
+        <button onclick="app.closeModal('setupModal')" class="p-1.5 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modal Sub-tabs -->
+      <div class="px-5 pt-3 bg-ios-bg/50 border-b border-ios-border flex gap-2">
+        <button id="setupTabBtn-webhook" onclick="app.switchSetupTab('webhook')" class="pb-2.5 px-3 text-xs font-bold border-b-2 border-ios-blue text-white">
+          1. Webhook Connection
+        </button>
+        <button id="setupTabBtn-script" onclick="app.switchSetupTab('script')" class="pb-2.5 px-3 text-xs font-bold border-b-2 border-transparent text-zinc-400 hover:text-white">
+          2. Google Apps Script (Code.gs)
+        </button>
+        <button id="setupTabBtn-shortcut" onclick="app.switchSetupTab('shortcut')" class="pb-2.5 px-3 text-xs font-bold border-b-2 border-transparent text-zinc-400 hover:text-white">
+          3. Apple Watch Shortcut
+        </button>
+      </div>
+
+      <!-- Modal Scroll Body -->
+      <div class="p-5 overflow-y-auto space-y-4 text-xs leading-relaxed">
+
+        <!-- SUB-TAB 1: WEBHOOK URL CONFIG -->
+        <div id="setupPanel-webhook" class="space-y-4">
+          <div class="p-3.5 rounded-2xl bg-ios-elevated border border-ios-border space-y-1">
+            <p class="font-semibold text-white">Zero-OAuth Serverless Bridge</p>
+            <p class="text-zinc-400">Paste your deployed Google Apps Script Web App URL below. Every workout logs immediately to <code class="text-ios-blue">localStorage</code> first, then syncs to your Google Sheet tabs (<code class="text-zinc-300">Strength_Logs</code> & <code class="text-zinc-300">Cardio_Logs</code>).</p>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-zinc-300 mb-1">Google Apps Script Web App URL</label>
+              <input id="gasWebhookUrlInput" type="url" placeholder="https://script.google.com/macros/s/AKfycb.../exec" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-xs font-mono text-white focus:outline-none focus:border-ios-blue" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-300 mb-1">Optional Shared Secret Key</label>
+              <input id="gasSecretKeyInput" type="text" placeholder="my-gym-secret-2026" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-xs font-mono text-white focus:outline-none focus:border-ios-blue" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-300 mb-1">iOS Shortcut Name (for Watch HR Button)</label>
+              <input id="iosShortcutNameInput" type="text" value="SyncWatchHR" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-xs font-mono text-white focus:outline-none focus:border-ios-blue" />
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2 pt-2">
+            <button onclick="app.saveWebhookConfig()" class="flex-1 py-2.5 px-4 rounded-xl bg-ios-blue text-white font-bold text-xs shadow-lg shadow-ios-blue/25 active:scale-95 transition">
+              Save Connection Settings
+            </button>
+            <button onclick="app.pullFromGoogleSheets()" class="py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-xs flex items-center gap-1.5 active:scale-95 transition">
+              <i data-lucide="cloud-download" class="w-4 h-4 text-ios-green"></i>
+              <span>Pull History from Sheet</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- SUB-TAB 2: GOOGLE APPS SCRIPT CODE.GS -->
+        <div id="setupPanel-script" class="hidden space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="font-bold text-white text-sm">Complete <code class="text-ios-blue">Code.gs</code> Backend</h4>
+              <p class="text-zinc-400 text-[11px]">1. Open a Google Sheet → <b>Extensions → Apps Script</b>.<br/>2. Paste this code, run <code class="text-ios-green">setupDatabase()</code> once, then click <b>Deploy → New Deployment → Web App</b> (Execute as: <i>Me</i>, Access: <i>Anyone</i>).</p>
+            </div>
+            <button onclick="app.copyGasCode()" class="px-3 py-2 rounded-xl bg-ios-blue text-white font-bold text-xs flex items-center gap-1.5 shrink-0 active:scale-95 transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy Code.gs</span>
+            </button>
+          </div>
+
+          <pre id="gasCodeBlock" class="p-3.5 rounded-2xl bg-zinc-950 border border-ios-border text-[11px] font-mono text-zinc-300 overflow-x-auto max-h-72 select-all leading-normal"></pre>
+        </div>
+
+        <!-- SUB-TAB 3: APPLE WATCH SHORTCUT SETUP GUIDE -->
+        <div id="setupPanel-shortcut" class="hidden space-y-4">
+          <div class="p-3.5 rounded-2xl bg-ios-pink/10 border border-ios-pink/30 space-y-1.5">
+            <h4 class="font-bold text-white flex items-center gap-1.5">
+              <i data-lucide="watch" class="w-4 h-4 text-ios-pink"></i>
+              <span>How the Apple Watch HR Bridge Works</span>
+            </h4>
+            <p class="text-zinc-300 text-[11px]">
+              Because iOS Safari cannot read HealthKit directly, a 4-action native <b>iOS Shortcut</b> named <code class="text-ios-pink font-mono">SyncWatchHR</code> grabs your Apple Watch Heart Rate & Active Calories from the last 60 minutes and either passes them right back into this web app via URL parameters OR posts them straight to your Google Sheet webhook!
+            </p>
+          </div>
+
+          <div class="space-y-2.5">
+            <div class="p-3 rounded-xl bg-ios-elevated border border-ios-border">
+              <span class="text-[10px] font-mono uppercase text-ios-blue font-bold">Step 1 • Find Heart Rate Samples</span>
+              <p class="text-zinc-300 mt-0.5">Open the <b>Shortcuts</b> app on iPhone → Create New Shortcut named <code class="text-white font-mono">SyncWatchHR</code>. Add action <b>"Find Health Samples"</b>: Type = <code class="text-ios-pink">Heart Rate</code>, Start Date = <code class="text-zinc-200">is in the last 1 hour</code>.</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-ios-elevated border border-ios-border">
+              <span class="text-[10px] font-mono uppercase text-ios-blue font-bold">Step 2 • Calculate Avg & Max HR</span>
+              <p class="text-zinc-300 mt-0.5">Add <b>"Calculate Statistics"</b> → Calculate <code class="text-white">Average</code> of Health Samples (Save to variable <code class="text-ios-green font-mono">AvgHR</code>). Duplicate action for <code class="text-white">Maximum</code> (Save to variable <code class="text-ios-pink font-mono">MaxHR</code>).</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-ios-elevated border border-ios-border">
+              <span class="text-[10px] font-mono uppercase text-ios-blue font-bold">Step 3 • Pass Back to Web App or POST to Sheet</span>
+              <p class="text-zinc-300 mt-0.5">
+                <b>Option A (Instant UI Fill):</b> Add <b>"Open URLs"</b> with:<br/>
+                <code id="shortcutReturnUrlPreview" class="block mt-1 p-2 rounded bg-zinc-950 text-[10px] font-mono text-ios-blue break-all"></code>
+              </p>
+              <p class="text-zinc-300 mt-2">
+                <b>Option B (Direct Background Webhook POST):</b> Add <b>"Get Contents of URL"</b> → Method: <code class="text-white">POST</code>, Request Body: <code class="text-white">JSON</code> with keys <code class="font-mono text-zinc-200">action: "watch_telemetry"</code>, <code class="font-mono text-zinc-200">avg_hr: AvgHR</code>, <code class="font-mono text-zinc-200">max_hr: MaxHR</code>.
+              </p>
+            </div>
+          </div>
+
+          <button onclick="app.simulateWatchShortcutCallback()" class="w-full py-2.5 rounded-xl bg-ios-pink/20 border border-ios-pink/40 text-ios-pink font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>Simulate Incoming Apple Watch HR Data Now</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: EXERCISE & SETUP BADGE CUSTOMIZER ==================== -->
+  <div id="customizerModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="w-full max-w-lg bg-ios-card border-t sm:border border-ios-border rounded-t-3xl sm:rounded-3xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-5 py-4 border-b border-ios-border flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="sliders" class="w-5 h-5 text-ios-blue"></i>
+          <h3 class="font-bold text-base text-white">Create / Add Exercise to Split</h3>
+        </div>
+        <button onclick="app.closeModal('customizerModal')" class="p-1.5 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-zinc-300 mb-1">Target Split Template</label>
+            <select id="newExTemplateId" class="w-full px-3 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white focus:outline-none focus:border-ios-blue">
+              <option value="Push_A">Week A • Day 1: Push</option>
+              <option value="Legs_A">Week A • Day 2: Legs</option>
+              <option value="Pull_A">Week A • Day 3: Pull</option>
+              <option value="Push_B">Week B • Day 1: Push (Variation)</option>
+              <option value="Legs_B">Week B • Day 2: Legs (Variation)</option>
+              <option value="Pull_B">Week B • Day 3: Pull (Variation)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-zinc-300 mb-1">Superset Group Code</label>
+            <input id="newExSuperset" type="text" placeholder="e.g., 1A, 1B, 2A, 3A" value="3A" class="w-full px-3 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white font-mono focus:outline-none focus:border-ios-blue" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-zinc-300 mb-1">Exercise Name</label>
+          <input id="newExName" type="text" placeholder="e.g., Cable Bayesian Curl" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white focus:outline-none focus:border-ios-blue" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-zinc-300 mb-1">Equipment Type</label>
+            <select id="newExEquipment" class="w-full px-3 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white focus:outline-none focus:border-ios-blue">
+              <option value="Cable">Cable</option>
+              <option value="Dumbbell">Dumbbell</option>
+              <option value="Barbell">Barbell</option>
+              <option value="Machine">Machine</option>
+              <option value="Bodyweight">Bodyweight</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-zinc-300 mb-1">Target Sets × Reps</label>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="newExSets" type="number" value="3" placeholder="Sets" class="w-full px-3 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white font-mono" />
+              <input id="newExReps" type="text" value="10-12" placeholder="Reps" class="w-full px-3 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white font-mono" />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-zinc-300 mb-1">Setup / Pin Height Notes</label>
+          <input id="newExSetupNotes" type="text" placeholder="e.g., Cable Pin 2 (Bottom) • Single D-Handle" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-white focus:outline-none focus:border-ios-blue" />
+        </div>
+
+        <button onclick="app.createNewExerciseInTemplate()" class="w-full py-3 rounded-2xl bg-ios-blue text-white font-bold text-xs shadow-lg shadow-ios-blue/25 active:scale-95 transition">
+          Add Exercise to Split Template
+        </button>
+
+        <div class="pt-3 border-t border-ios-border flex items-center justify-between">
+          <span class="text-zinc-400">Want to restore default Push/Legs/Pull templates?</span>
+          <button onclick="app.resetDefaultDatabase()" class="text-ios-red font-semibold hover:underline">Reset Demo Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: INLINE SETUP NOTES EDITOR ==================== -->
+  <div id="editSetupModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-ios-card border border-ios-border rounded-3xl p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 id="editSetupModalTitle" class="font-bold text-sm text-white">Edit Equipment & Pin Setup</h3>
+        <button onclick="app.closeModal('editSetupModal')" class="p-1 rounded-lg bg-zinc-800 text-zinc-400">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1.5">Persistent Setup Badge (Bench Angle, Cable Pin #, Attachment)</label>
+        <input id="editSetupNotesInput" type="text" class="w-full px-3.5 py-2.5 rounded-xl bg-ios-bg border border-ios-border text-xs text-white focus:outline-none focus:border-ios-blue" />
+      </div>
+      <div class="flex gap-2">
+        <button onclick="app.closeModal('editSetupModal')" class="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold">Cancel</button>
+        <button onclick="app.saveExerciseSetupNotes()" class="flex-1 py-2.5 rounded-xl bg-ios-blue text-white text-xs font-bold">Save Badge</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== APPLICATION LOGIC & EMBEDDED CODE.GS ==================== -->
+  <script>
+    // Complete Google Apps Script Backend Code (Code.gs) ready to copy-paste
+    const GOOGLE_APPS_SCRIPT_CODE = `/**
+ * PULSESHEET — GOOGLE SHEETS SERVERLESS BACKEND (Code.gs)
+ * 1. Paste into Extensions -> Apps Script in your Google Sheet.
+ * 2. Run seedInitialData() once from the toolbar to create all 4 tabs & pre-populate
+ *    all 36 Week A / Week B exercises and 6 superset templates!
+ * 3. Click Deploy -> New deployment -> Web app (Execute as: Me, Access: Anyone).
+ */
+
+const SECRET_KEY = ""; // Optional: Match with your PWA Secret Key if set
+
+function setupDatabase() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const schemas = {
+    "Exercises": ["Exercise_ID", "Name", "Split_Category", "Equipment", "Setup_Notes"],
+    "Templates": ["Template_ID", "Order", "Superset_Group", "Exercise_ID", "Target_Sets", "Target_Reps"],
+    "Strength_Logs": ["Timestamp", "Session_ID", "Template_ID", "Exercise_ID", "Exercise_Name", "Superset_Group", "Set_Number", "Weight_Lbs", "Reps", "Setup_Notes", "Session_Avg_HR", "Session_Max_HR", "Active_Cals", "Notes"],
+    "Cardio_Logs": ["Timestamp", "Session_ID", "Modality", "Duration_Min", "Distance_Mi", "Incline_Pct", "Avg_Pace_or_Speed", "Interval_Split_Notes", "Avg_HR", "Max_HR", "Active_Cals"]
+  };
+
+  Object.keys(schemas).forEach(tabName => {
+    let sheet = ss.getSheetByName(tabName);
+    if (!sheet) sheet = ss.insertSheet(tabName);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(schemas[tabName]);
+      sheet.getRange(1, 1, 1, schemas[tabName].length).setFontWeight("bold").setBackground("#18181b").setFontColor("#ffffff");
+      sheet.setFrozenRows(1);
+    }
+  });
+}
+
+/**
+ * Run this once in Apps Script to populate all 36 exercises and 6 Week A / Week B routines
+ */
+function seedInitialData() {
+  setupDatabase();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const exSheet = ss.getSheetByName("Exercises");
+  const tplSheet = ss.getSheetByName("Templates");
+
+  const exercises = [
+    // Week A - Push
+    ["EX_DB_BENCH", "DB Bench Press", "Push", "Dumbbell", "Flat Bench • Full ROM control"],
+    ["EX_DB_SHOULDER_PRESS", "DB Shoulder Press", "Push", "Dumbbell", "Seated 75-80° Bench • Core braced"],
+    ["EX_INC_DB_BENCH", "Incline DB Bench", "Push", "Dumbbell", "Bench Angle 30° (Notch 2-3)"],
+    ["EX_LAT_RAISE", "Lateral Raises", "Push", "Dumbbell", "Slight forward lean • Lead with elbows"],
+    ["EX_TRI_PUSHDOWN", "Tricep Pushdowns", "Push", "Cable", "High Pulley • Rope or V-Bar • Elbows pinned"],
+    ["EX_DEAD_BUGS", "Dead Bugs", "Push", "Bodyweight", "Low back pressed flat into floor • 8-10 ea side"],
+    // Week A - Legs
+    ["EX_DB_GOBLET_SQUAT", "DB Goblet Squats", "Legs", "Dumbbell", "Hold heavy DB vertically at chest • Heels elevated optional"],
+    ["EX_DB_SL_RDL", "DB Single-Leg RDLs", "Legs", "Dumbbell", "10-12 ea leg • Hip hinge, flat back"],
+    ["EX_LUNGES", "Lunges", "Legs", "Dumbbell", "DBs at sides • 8-12 steps per leg"],
+    ["EX_DB_HIP_THRUST", "DB Bench Hip Thrusts", "Legs", "Dumbbell", "Upper back on bench • Heavy DB across hips • 1s squeeze"],
+    ["EX_CALF_RAISE", "Calf Raises", "Legs", "Dumbbell", "Full stretch at bottom • 1s pause at top"],
+    ["EX_BICYCLES", "Bicycles", "Legs", "Bodyweight", "Controlled rotation • 15 reps each side"],
+    // Week A - Pull
+    ["EX_CABLE_ROW", "Cable Rows", "Pull", "Cable", "Seated Low Pulley • Close neutral V-grip or wide bar"],
+    ["EX_INC_DB_CURL", "Seated Incline DB Bicep Curls", "Pull", "Dumbbell", "Bench Angle 45-60° • Long-head stretch at bottom"],
+    ["EX_SA_DB_ROW", "Single-Arm DB Rows", "Pull", "Dumbbell", "1 hand/knee on bench • Pull DB toward hip"],
+    ["EX_DB_STATIC_HOLD", "Heavy DB Static Holds", "Pull", "Dumbbell", "Heavy DBs at sides • Tall posture & grip/trap hold"],
+    ["EX_CABLE_PULLDOWN", "Cable Pulldowns", "Pull", "Cable", "High Pulley • Lat bar • Pull elbows down to ribs"],
+    ["EX_HAMMER_CURL", "Hammer Curls", "Pull", "Dumbbell", "Neutral palms-in grip • Zero body swing"],
+    // Week B - Push
+    ["EX_DB_FLAT_FLY", "DB Flat Bench Flys", "Push", "Dumbbell", "Flat Bench • Soft elbow bend, deep pec stretch"],
+    ["EX_ARNOLD_PRESS", "Arnold Presses", "Push", "Dumbbell", "Rotational element hits front & medial delts effectively"],
+    ["EX_CABLE_CHEST_PRESS", "Standing Cable Chest Press", "Push", "Cable", "Chest-height pulleys • Constant cable tension through full ROM"],
+    ["EX_CABLE_LAT_RAISE", "Cable Lateral Raises", "Push", "Cable", "Bottom pulley (Pin 1-2) • Constant tension across body"],
+    ["EX_DB_OH_TRI_EXT", "DB Overhead Tricep Extensions", "Push", "Dumbbell", "Overhead position targets the long head of the tricep"],
+    ["EX_CABLE_WOOD_CHOP", "Cable Wood Chops", "Push", "Cable", "High-to-low or mid pulley • Rotate through torso (8-12 ea)"],
+    // Week B - Legs
+    ["EX_DB_FRONT_SQUAT", "DB Front Squats", "Legs", "Dumbbell", "Hold two DBs resting on shoulders to shift focus to quads"],
+    ["EX_DB_BILAT_RDL", "DB Bilateral RDLs", "Legs", "Dumbbell", "Both feet planted • Push hips back for hamstring stretch"],
+    ["EX_BULG_SPLIT_SQUAT", "Bulgarian Split Squats", "Legs", "Dumbbell", "Use step-up box or bench to elevate rear foot (8-10 ea)"],
+    ["EX_CABLE_PULL_THROUGH", "Cable Pull-Throughs", "Legs", "Cable", "Low pulley with rope • Face away & hinge through hips"],
+    ["EX_REV_LUNGE", "Reverse Lunges", "Legs", "Dumbbell", "Stepping backward is easier on knees & heavily targets glutes"],
+    ["EX_SL_CALF_RAISE", "Single-Leg Calf Raises", "Legs", "Dumbbell", "1 DB in hand • Elevate forefoot on plate/step (10-15 ea)"],
+    // Week B - Pull
+    ["EX_DB_PULLOVER", "DB Pullovers", "Pull", "Dumbbell", "1 heavy DB across bench • Fantastic lat stretcher & builder"],
+    ["EX_CABLE_CURL", "Cable Bicep Curls", "Pull", "Cable", "Low pulley EZ-bar or straight bar • Constant tension"],
+    ["EX_ALT_BENT_ROW", "Alternating Bent-Over DB Rows", "Pull", "Dumbbell", "Hinged torso 45° • Alternate left/right pulls"],
+    ["EX_DB_REV_FLY", "DB Reverse Flys", "Pull", "Dumbbell", "Hits upper back & rear delts while keeping shoulder joint safe"],
+    ["EX_STRAIGHT_ARM_PD", "Straight-Arm Cable Pulldowns", "Pull", "Cable", "High pulley rope/bar • Arms straight, sweep down to thighs"],
+    ["EX_CROSS_HAMMER_CURL", "Cross-Body DB Hammer Curls", "Pull", "Dumbbell", "Curl DB across chest toward opposite shoulder for brachialis"]
+  ];
+
+  const templates = [
+    // Week A - Day 1 Push
+    ["Push_A", 1, "1A", "EX_DB_BENCH", 3, "8-12"],
+    ["Push_A", 2, "1B", "EX_DB_SHOULDER_PRESS", 3, "8-12"],
+    ["Push_A", 3, "2A", "EX_INC_DB_BENCH", 3, "10-12"],
+    ["Push_A", 4, "2B", "EX_LAT_RAISE", 3, "12-15"],
+    ["Push_A", 5, "3A", "EX_TRI_PUSHDOWN", 3, "10-12"],
+    ["Push_A", 6, "3B", "EX_DEAD_BUGS", 3, "8-10 ea"],
+    // Week A - Day 2 Legs
+    ["Legs_A", 1, "1A", "EX_DB_GOBLET_SQUAT", 3, "10-12"],
+    ["Legs_A", 2, "1B", "EX_DB_SL_RDL", 3, "10-12"],
+    ["Legs_A", 3, "2A", "EX_LUNGES", 3, "8-12"],
+    ["Legs_A", 4, "2B", "EX_DB_HIP_THRUST", 3, "8-12"],
+    ["Legs_A", 5, "3A", "EX_CALF_RAISE", 3, "10-15"],
+    ["Legs_A", 6, "3B", "EX_BICYCLES", 3, "15 ea"],
+    // Week A - Day 3 Pull
+    ["Pull_A", 1, "1A", "EX_CABLE_ROW", 3, "8-12"],
+    ["Pull_A", 2, "1B", "EX_INC_DB_CURL", 3, "8-12"],
+    ["Pull_A", 3, "2A", "EX_SA_DB_ROW", 3, "8-12"],
+    ["Pull_A", 4, "2B", "EX_DB_STATIC_HOLD", 3, "8-12"],
+    ["Pull_A", 5, "3A", "EX_CABLE_PULLDOWN", 3, "8-12"],
+    ["Pull_A", 6, "3B", "EX_HAMMER_CURL", 3, "8-12"],
+    // Week B - Day 1 Push
+    ["Push_B", 1, "1A", "EX_DB_FLAT_FLY", 3, "8-12"],
+    ["Push_B", 2, "1B", "EX_ARNOLD_PRESS", 3, "8-12"],
+    ["Push_B", 3, "2A", "EX_CABLE_CHEST_PRESS", 3, "10-12"],
+    ["Push_B", 4, "2B", "EX_CABLE_LAT_RAISE", 3, "12-15"],
+    ["Push_B", 5, "3A", "EX_DB_OH_TRI_EXT", 3, "10-12"],
+    ["Push_B", 6, "3B", "EX_CABLE_WOOD_CHOP", 3, "8-12"],
+    // Week B - Day 2 Legs
+    ["Legs_B", 1, "1A", "EX_DB_FRONT_SQUAT", 3, "10-12"],
+    ["Legs_B", 2, "1B", "EX_DB_BILAT_RDL", 3, "10-12"],
+    ["Legs_B", 3, "2A", "EX_BULG_SPLIT_SQUAT", 3, "8-10"],
+    ["Legs_B", 4, "2B", "EX_CABLE_PULL_THROUGH", 3, "12-15"],
+    ["Legs_B", 5, "3A", "EX_REV_LUNGE", 3, "8-12"],
+    ["Legs_B", 6, "3B", "EX_SL_CALF_RAISE", 3, "10-15"],
+    // Week B - Day 3 Pull
+    ["Pull_B", 1, "1A", "EX_DB_PULLOVER", 3, "8-12"],
+    ["Pull_B", 2, "1B", "EX_CABLE_CURL", 3, "8-12"],
+    ["Pull_B", 3, "2A", "EX_ALT_BENT_ROW", 3, "8-12"],
+    ["Pull_B", 4, "2B", "EX_DB_REV_FLY", 3, "8-12"],
+    ["Pull_B", 5, "3A", "EX_STRAIGHT_ARM_PD", 3, "8-12"],
+    ["Pull_B", 6, "3B", "EX_CROSS_HAMMER_CURL", 3, "8-12"]
+  ];
+
+  if (exSheet.getLastRow() <= 1) {
+    exSheet.getRange(2, 1, exercises.length, 5).setValues(exercises);
+  }
+  if (tplSheet.getLastRow() <= 1) {
+    tplSheet.getRange(2, 1, templates.length, 6).setValues(templates);
+  }
+}
+
+function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const readTab = (name) => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows.shift();
+    return rows.map(r => {
+      let obj = {};
+      headers.forEach((h, i) => obj[h] = r[i]);
+      return obj;
+    });
+  };
+
+  const payload = {
+    status: "ok",
+    strength_logs: readTab("Strength_Logs").slice(-250),
+    cardio_logs: readTab("Cardio_Logs").slice(-100)
+  };
+
+  return ContentService.createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (SECRET_KEY && body.secret !== SECRET_KEY) {
+      return jsonResponse({ status: "error", message: "Invalid secret key" });
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const now = body.timestamp || new Date().toISOString();
+
+    // 1. Handle Strength Workout Batch
+    if (body.action === "log_strength" && Array.isArray(body.sets)) {
+      const sheet = ss.getSheetByName("Strength_Logs");
+      body.sets.forEach(s => {
+        sheet.appendRow([
+          now,
+          body.session_id,
+          body.template_id,
+          s.exercise_id,
+          s.exercise_name,
+          s.superset_group,
+          s.set_number,
+          s.weight_lbs,
+          s.reps,
+          s.setup_notes || "",
+          body.avg_hr || "",
+          body.max_hr || "",
+          body.active_cals || "",
+          body.notes || ""
+        ]);
+      });
+
+      // Also update persistent Setup_Notes on Exercises tab if changed
+      const exSheet = ss.getSheetByName("Exercises");
+      if (exSheet && exSheet.getLastRow() > 1) {
+        const data = exSheet.getDataRange().getValues();
+        body.sets.forEach(s => {
+          for (let i = 1; i < data.length; i++) {
+            if (data[i][0] === s.exercise_id && s.setup_notes) {
+              exSheet.getRange(i + 1, 5).setValue(s.setup_notes);
+            }
+          }
+        });
+      }
+      return jsonResponse({ status: "ok", rows_added: body.sets.length });
+    }
+
+    // 2. Handle Cardio / Interval Log
+    if (body.action === "log_cardio") {
+      const sheet = ss.getSheetByName("Cardio_Logs");
+      sheet.appendRow([
+        now,
+        body.session_id,
+        body.modality,
+        body.duration_min,
+        body.distance_mi,
+        body.incline_pct,
+        body.pace_or_speed,
+        body.interval_notes || "",
+        body.avg_hr || "",
+        body.max_hr || "",
+        body.active_cals || ""
+      ]);
+      return jsonResponse({ status: "ok", type: "cardio" });
+    }
+
+    // 3. Handle Standalone Apple Watch iOS Shortcut Telemetry Patch
+    if (body.action === "watch_telemetry") {
+      return jsonResponse({ status: "ok", watch_synced: true });
+    }
+
+    return jsonResponse({ status: "error", message: "Unknown action" });
+  } catch (err) {
+    return jsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+
+    // Default Seed Database: Exact User Week A & Week B Push / Legs / Pull Superset Splits (36 Exercises, 6 Templates)
+    const DEFAULT_DB = {
+      schemaVersion: "2.0_WEEK_AB_EXACT",
+      config: {
+        webhookUrl: "",
+        secretKey: "",
+        shortcutName: "SyncWatchHR",
+        weekFilter: "A"
+      },
+      exercises: {
+        // ==================== WEEK A: DAY 1 PUSH ====================
+        "EX_DB_BENCH": { id: "EX_DB_BENCH", name: "DB Bench Press", category: "Push", equipment: "Dumbbell", setupNotes: "Flat Bench • Full ROM control", defaultWeight: 65, defaultReps: 10 },
+        "EX_DB_SHOULDER_PRESS": { id: "EX_DB_SHOULDER_PRESS", name: "DB Shoulder Press", category: "Push", equipment: "Dumbbell", setupNotes: "Seated 75-80° Bench • Core braced", defaultWeight: 45, defaultReps: 10 },
+        "EX_INC_DB_BENCH": { id: "EX_INC_DB_BENCH", name: "Incline DB Bench", category: "Push", equipment: "Dumbbell", setupNotes: "Bench Angle 30° (Notch 2-3)", defaultWeight: 55, defaultReps: 10 },
+        "EX_LAT_RAISE": { id: "EX_LAT_RAISE", name: "Lateral Raises", category: "Push", equipment: "Dumbbell", setupNotes: "Slight forward lean • Lead with elbows", defaultWeight: 20, defaultReps: 15 },
+        "EX_TRI_PUSHDOWN": { id: "EX_TRI_PUSHDOWN", name: "Tricep Pushdowns", category: "Push", equipment: "Cable", setupNotes: "High Pulley • Rope or V-Bar • Elbows pinned", defaultWeight: 45, defaultReps: 12 },
+        "EX_DEAD_BUGS": { id: "EX_DEAD_BUGS", name: "Dead Bugs", category: "Push", equipment: "Bodyweight", setupNotes: "Low back pressed flat into floor • 8-10 reps each side", defaultWeight: 0, defaultReps: 10 },
+
+        // ==================== WEEK A: DAY 2 LEGS ====================
+        "EX_DB_GOBLET_SQUAT": { id: "EX_DB_GOBLET_SQUAT", name: "DB Goblet Squats", category: "Legs", equipment: "Dumbbell", setupNotes: "Hold heavy DB vertically at chest • Heels elevated optional", defaultWeight: 70, defaultReps: 12 },
+        "EX_DB_SL_RDL": { id: "EX_DB_SL_RDL", name: "DB Single-Leg RDLs", category: "Legs", equipment: "Dumbbell", setupNotes: "10-12 each leg • Hip hinge with flat back", defaultWeight: 35, defaultReps: 10 },
+        "EX_LUNGES": { id: "EX_LUNGES", name: "Lunges", category: "Legs", equipment: "Dumbbell", setupNotes: "DBs at sides • 8-12 controlled reps per leg", defaultWeight: 40, defaultReps: 10 },
+        "EX_DB_HIP_THRUST": { id: "EX_DB_HIP_THRUST", name: "DB Bench Hip Thrusts", category: "Legs", equipment: "Dumbbell", setupNotes: "Upper back on bench • Heavy DB on hips • 1s top squeeze", defaultWeight: 75, defaultReps: 12 },
+        "EX_CALF_RAISE": { id: "EX_CALF_RAISE", name: "Calf Raises", category: "Legs", equipment: "Dumbbell", setupNotes: "Full stretch at bottom • 1s pause at top", defaultWeight: 50, defaultReps: 15 },
+        "EX_BICYCLES": { id: "EX_BICYCLES", name: "Bicycles", category: "Legs", equipment: "Bodyweight", setupNotes: "Controlled torso rotation • 15 reps each side", defaultWeight: 0, defaultReps: 15 },
+
+        // ==================== WEEK A: DAY 3 PULL ====================
+        "EX_CABLE_ROW": { id: "EX_CABLE_ROW", name: "Cable Rows", category: "Pull", equipment: "Cable", setupNotes: "Seated Low Pulley • Neutral V-Grip • Chest tall", defaultWeight: 120, defaultReps: 10 },
+        "EX_INC_DB_CURL": { id: "EX_INC_DB_CURL", name: "Seated Incline DB Bicep Curls", category: "Pull", equipment: "Dumbbell", setupNotes: "Bench Angle 45-60° • Full long-head stretch at bottom", defaultWeight: 25, defaultReps: 10 },
+        "EX_SA_DB_ROW": { id: "EX_SA_DB_ROW", name: "Single-Arm DB Rows", category: "Pull", equipment: "Dumbbell", setupNotes: "1 hand/knee on bench • Pull elbow back toward hip", defaultWeight: 65, defaultReps: 10 },
+        "EX_DB_STATIC_HOLD": { id: "EX_DB_STATIC_HOLD", name: "Heavy DB Static Holds", category: "Pull", equipment: "Dumbbell", setupNotes: "Heavy DBs at sides • Tall posture, grip & trap focus", defaultWeight: 80, defaultReps: 10 },
+        "EX_CABLE_PULLDOWN": { id: "EX_CABLE_PULLDOWN", name: "Cable Pulldowns", category: "Pull", equipment: "Cable", setupNotes: "High Pulley • Lat bar • Drive elbows down to ribs", defaultWeight: 130, defaultReps: 10 },
+        "EX_HAMMER_CURL": { id: "EX_HAMMER_CURL", name: "Hammer Curls", category: "Pull", equipment: "Dumbbell", setupNotes: "Neutral palms-in grip • Strict zero swing", defaultWeight: 30, defaultReps: 10 },
+
+        // ==================== WEEK B: DAY 1 PUSH (VARIATION) ====================
+        "EX_DB_FLAT_FLY": { id: "EX_DB_FLAT_FLY", name: "DB Flat Bench Flys", category: "Push", equipment: "Dumbbell", setupNotes: "Flat Bench • Soft elbow bend, deep chest stretch", defaultWeight: 30, defaultReps: 10 },
+        "EX_ARNOLD_PRESS": { id: "EX_ARNOLD_PRESS", name: "Arnold Presses", category: "Push", equipment: "Dumbbell", setupNotes: "Rotational element hits front & medial delts effectively", defaultWeight: 40, defaultReps: 10 },
+        "EX_CABLE_CHEST_PRESS": { id: "EX_CABLE_CHEST_PRESS", name: "Standing Cable Chest Press", category: "Push", equipment: "Cable", setupNotes: "Chest-height pulleys • Constant tension through full ROM", defaultWeight: 40, defaultReps: 12 },
+        "EX_CABLE_LAT_RAISE": { id: "EX_CABLE_LAT_RAISE", name: "Cable Lateral Raises", category: "Push", equipment: "Cable", setupNotes: "Bottom pulley (Pin 1-2) • Constant tension through whole ROM", defaultWeight: 15, defaultReps: 15 },
+        "EX_DB_OH_TRI_EXT": { id: "EX_DB_OH_TRI_EXT", name: "DB Overhead Tricep Extensions", category: "Push", equipment: "Dumbbell", setupNotes: "Overhead extension targets the long head of the tricep", defaultWeight: 50, defaultReps: 12 },
+        "EX_CABLE_WOOD_CHOP": { id: "EX_CABLE_WOOD_CHOP", name: "Cable Wood Chops", category: "Push", equipment: "Cable", setupNotes: "High-to-low or mid pulley • Rotational core control (8-12 ea)", defaultWeight: 30, defaultReps: 10 },
+
+        // ==================== WEEK B: DAY 2 LEGS (VARIATION) ====================
+        "EX_DB_FRONT_SQUAT": { id: "EX_DB_FRONT_SQUAT", name: "DB Front Squats", category: "Legs", equipment: "Dumbbell", setupNotes: "Hold 2 DBs resting on shoulders to shift focus to quads", defaultWeight: 45, defaultReps: 10 },
+        "EX_DB_BILAT_RDL": { id: "EX_DB_BILAT_RDL", name: "DB Bilateral RDLs", category: "Legs", equipment: "Dumbbell", setupNotes: "2 DBs in front of thighs • Deep hamstring stretch", defaultWeight: 60, defaultReps: 10 },
+        "EX_BULG_SPLIT_SQUAT": { id: "EX_BULG_SPLIT_SQUAT", name: "Bulgarian Split Squats", category: "Legs", equipment: "Dumbbell", setupNotes: "Elevate rear foot on step-up box or bench (8-10 ea)", defaultWeight: 40, defaultReps: 9 },
+        "EX_CABLE_PULL_THROUGH": { id: "EX_CABLE_PULL_THROUGH", name: "Cable Pull-Throughs", category: "Legs", equipment: "Cable", setupNotes: "Low pulley rope • Face away, hinge hips & glute squeeze", defaultWeight: 55, defaultReps: 15 },
+        "EX_REV_LUNGE": { id: "EX_REV_LUNGE", name: "Reverse Lunges", category: "Legs", equipment: "Dumbbell", setupNotes: "Stepping backward is easier on knees & heavily targets glutes", defaultWeight: 40, defaultReps: 10 },
+        "EX_SL_CALF_RAISE": { id: "EX_SL_CALF_RAISE", name: "Single-Leg Calf Raises", category: "Legs", equipment: "Dumbbell", setupNotes: "1 DB in hand • Forefoot on step block (10-15 ea)", defaultWeight: 35, defaultReps: 12 },
+
+        // ==================== WEEK B: DAY 3 PULL (VARIATION) ====================
+        "EX_DB_PULLOVER": { id: "EX_DB_PULLOVER", name: "DB Pullovers", category: "Pull", equipment: "Dumbbell", setupNotes: "1 heavy DB on bench • Great stretcher & builder for lats", defaultWeight: 55, defaultReps: 10 },
+        "EX_CABLE_CURL": { id: "EX_CABLE_CURL", name: "Cable Bicep Curls", category: "Pull", equipment: "Cable", setupNotes: "Low pulley bar/handle • Elbows tucked at sides", defaultWeight: 45, defaultReps: 10 },
+        "EX_ALT_BENT_ROW": { id: "EX_ALT_BENT_ROW", name: "Alternating Bent-Over DB Rows", category: "Pull", equipment: "Dumbbell", setupNotes: "Hinged torso 45° • Alternate left & right rows", defaultWeight: 50, defaultReps: 10 },
+        "EX_DB_REV_FLY": { id: "EX_DB_REV_FLY", name: "DB Reverse Flys", category: "Pull", equipment: "Dumbbell", setupNotes: "Hits upper back & rear delts while keeping shoulder joint safe", defaultWeight: 20, defaultReps: 12 },
+        "EX_STRAIGHT_ARM_PD": { id: "EX_STRAIGHT_ARM_PD", name: "Straight-Arm Cable Pulldowns", category: "Pull", equipment: "Cable", setupNotes: "High pulley rope/bar • Arms straight, sweep down to thighs", defaultWeight: 45, defaultReps: 12 },
+        "EX_CROSS_HAMMER_CURL": { id: "EX_CROSS_HAMMER_CURL", name: "Cross-Body DB Hammer Curls", category: "Pull", equipment: "Dumbbell", setupNotes: "Curl DB across torso toward opposite shoulder", defaultWeight: 30, defaultReps: 10 }
+      },
+      templates: {
+        "Push_A": {
+          id: "Push_A",
+          week: "A",
+          dayLabel: "Week A • Day 1",
+          name: "Day 1: Push (Week A)",
+          badge: "WEEK A • PUSH",
+          accent: "blue",
+          subtitle: "3 Supersets • Bench, Shoulder Press, Incline, Laterals, Tris & Core",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_DB_BENCH", targetSets: 3, targetReps: "8-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_DB_SHOULDER_PRESS", targetSets: 3, targetReps: "8-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_INC_DB_BENCH", targetSets: 3, targetReps: "10-12" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_LAT_RAISE", targetSets: 3, targetReps: "12-15" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_TRI_PUSHDOWN", targetSets: 3, targetReps: "10-12" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_DEAD_BUGS", targetSets: 3, targetReps: "8-10 ea" }
+          ]
+        },
+        "Legs_A": {
+          id: "Legs_A",
+          week: "A",
+          dayLabel: "Week A • Day 2",
+          name: "Day 2: Legs (Week A)",
+          badge: "WEEK A • LEGS",
+          accent: "purple",
+          subtitle: "3 Supersets • Goblet Squats, SL RDLs, Lunges, Hip Thrusts & Calves",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_DB_GOBLET_SQUAT", targetSets: 3, targetReps: "10-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_DB_SL_RDL", targetSets: 3, targetReps: "10-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_LUNGES", targetSets: 3, targetReps: "8-12" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_DB_HIP_THRUST", targetSets: 3, targetReps: "8-12" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_CALF_RAISE", targetSets: 3, targetReps: "10-15" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_BICYCLES", targetSets: 3, targetReps: "15 ea" }
+          ]
+        },
+        "Pull_A": {
+          id: "Pull_A",
+          week: "A",
+          dayLabel: "Week A • Day 3",
+          name: "Day 3: Pull (Week A)",
+          badge: "WEEK A • PULL",
+          accent: "green",
+          subtitle: "3 Supersets • Cable/DB Rows, Incline Curls, Static Holds & Pulldowns",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_CABLE_ROW", targetSets: 3, targetReps: "8-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_INC_DB_CURL", targetSets: 3, targetReps: "8-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_SA_DB_ROW", targetSets: 3, targetReps: "8-12" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_DB_STATIC_HOLD", targetSets: 3, targetReps: "8-12" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_CABLE_PULLDOWN", targetSets: 3, targetReps: "8-12" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_HAMMER_CURL", targetSets: 3, targetReps: "8-12" }
+          ]
+        },
+        "Push_B": {
+          id: "Push_B",
+          week: "B",
+          dayLabel: "Week B • Day 1",
+          name: "Day 1: Push (Week B Variation)",
+          badge: "WEEK B • PUSH",
+          accent: "blue",
+          subtitle: "3 Supersets • Flat Flys, Arnold Press, Cable Chest/Delt & OH Tri/Chops",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_DB_FLAT_FLY", targetSets: 3, targetReps: "8-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_ARNOLD_PRESS", targetSets: 3, targetReps: "8-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_CABLE_CHEST_PRESS", targetSets: 3, targetReps: "10-12" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_CABLE_LAT_RAISE", targetSets: 3, targetReps: "12-15" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_DB_OH_TRI_EXT", targetSets: 3, targetReps: "10-12" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_CABLE_WOOD_CHOP", targetSets: 3, targetReps: "8-12" }
+          ]
+        },
+        "Legs_B": {
+          id: "Legs_B",
+          week: "B",
+          dayLabel: "Week B • Day 2",
+          name: "Day 2: Legs (Week B Variation)",
+          badge: "WEEK B • LEGS",
+          accent: "purple",
+          subtitle: "3 Supersets • Front Squats, Bilat RDLs, Split Squats, Pull-Throughs & Lunges",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_DB_FRONT_SQUAT", targetSets: 3, targetReps: "10-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_DB_BILAT_RDL", targetSets: 3, targetReps: "10-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_BULG_SPLIT_SQUAT", targetSets: 3, targetReps: "8-10" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_CABLE_PULL_THROUGH", targetSets: 3, targetReps: "12-15" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_REV_LUNGE", targetSets: 3, targetReps: "8-12" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_SL_CALF_RAISE", targetSets: 3, targetReps: "10-15" }
+          ]
+        },
+        "Pull_B": {
+          id: "Pull_B",
+          week: "B",
+          dayLabel: "Week B • Day 3",
+          name: "Day 3: Pull (Week B Variation)",
+          badge: "WEEK B • PULL",
+          accent: "green",
+          subtitle: "3 Supersets • DB Pullovers, Cable Curls, Alt Rows, Rev Flys & Straight-Arm PD",
+          items: [
+            { order: 1, supersetGroup: "1A", exerciseId: "EX_DB_PULLOVER", targetSets: 3, targetReps: "8-12" },
+            { order: 2, supersetGroup: "1B", exerciseId: "EX_CABLE_CURL", targetSets: 3, targetReps: "8-12" },
+            { order: 3, supersetGroup: "2A", exerciseId: "EX_ALT_BENT_ROW", targetSets: 3, targetReps: "8-12" },
+            { order: 4, supersetGroup: "2B", exerciseId: "EX_DB_REV_FLY", targetSets: 3, targetReps: "8-12" },
+            { order: 5, supersetGroup: "3A", exerciseId: "EX_STRAIGHT_ARM_PD", targetSets: 3, targetReps: "8-12" },
+            { order: 6, supersetGroup: "3B", exerciseId: "EX_CROSS_HAMMER_CURL", targetSets: 3, targetReps: "8-12" }
+          ]
+        }
+      },
+      // Pre-seeded realistic previous sessions so "Last Session" Ghost Text works immediately on first launch
+      strengthHistory: [
+        {
+          sessionId: "SES_901",
+          timestamp: new Date(Date.now() - 86400000 * 5).toISOString(),
+          templateId: "Push_A",
+          templateName: "Day 1: Push (Week A)",
+          avgHr: 134,
+          maxHr: 166,
+          activeCals: 395,
+          notes: "All 3 supersets felt strong",
+          synced: true,
+          sets: [
+            { exerciseId: "EX_DB_BENCH", exerciseName: "DB Bench Press", supersetGroup: "1A", setNumber: 1, weight: 65, reps: 10 },
+            { exerciseId: "EX_DB_BENCH", exerciseName: "DB Bench Press", supersetGroup: "1A", setNumber: 2, weight: 65, reps: 10 },
+            { exerciseId: "EX_DB_BENCH", exerciseName: "DB Bench Press", supersetGroup: "1A", setNumber: 3, weight: 65, reps: 9 },
+            { exerciseId: "EX_DB_SHOULDER_PRESS", exerciseName: "DB Shoulder Press", supersetGroup: "1B", setNumber: 1, weight: 45, reps: 10 },
+            { exerciseId: "EX_DB_SHOULDER_PRESS", exerciseName: "DB Shoulder Press", supersetGroup: "1B", setNumber: 2, weight: 45, reps: 10 },
+            { exerciseId: "EX_DB_SHOULDER_PRESS", exerciseName: "DB Shoulder Press", supersetGroup: "1B", setNumber: 3, weight: 45, reps: 9 },
+            { exerciseId: "EX_INC_DB_BENCH", exerciseName: "Incline DB Bench", supersetGroup: "2A", setNumber: 1, weight: 55, reps: 11 },
+            { exerciseId: "EX_INC_DB_BENCH", exerciseName: "Incline DB Bench", supersetGroup: "2A", setNumber: 2, weight: 55, reps: 10 },
+            { exerciseId: "EX_INC_DB_BENCH", exerciseName: "Incline DB Bench", supersetGroup: "2A", setNumber: 3, weight: 55, reps: 10 },
+            { exerciseId: "EX_LAT_RAISE", exerciseName: "Lateral Raises", supersetGroup: "2B", setNumber: 1, weight: 20, reps: 15 },
+            { exerciseId: "EX_LAT_RAISE", exerciseName: "Lateral Raises", supersetGroup: "2B", setNumber: 2, weight: 20, reps: 14 },
+            { exerciseId: "EX_LAT_RAISE", exerciseName: "Lateral Raises", supersetGroup: "2B", setNumber: 3, weight: 20, reps: 12 },
+            { exerciseId: "EX_TRI_PUSHDOWN", exerciseName: "Tricep Pushdowns", supersetGroup: "3A", setNumber: 1, weight: 45, reps: 12 },
+            { exerciseId: "EX_TRI_PUSHDOWN", exerciseName: "Tricep Pushdowns", supersetGroup: "3A", setNumber: 2, weight: 45, reps: 12 },
+            { exerciseId: "EX_TRI_PUSHDOWN", exerciseName: "Tricep Pushdowns", supersetGroup: "3A", setNumber: 3, weight: 45, reps: 11 },
+            { exerciseId: "EX_DEAD_BUGS", exerciseName: "Dead Bugs", supersetGroup: "3B", setNumber: 1, weight: 0, reps: 10 },
+            { exerciseId: "EX_DEAD_BUGS", exerciseName: "Dead Bugs", supersetGroup: "3B", setNumber: 2, weight: 0, reps: 10 },
+            { exerciseId: "EX_DEAD_BUGS", exerciseName: "Dead Bugs", supersetGroup: "3B", setNumber: 3, weight: 0, reps: 10 }
+          ]
+        },
+        {
+          sessionId: "SES_902",
+          timestamp: new Date(Date.now() - 86400000 * 3).toISOString(),
+          templateId: "Legs_A",
+          templateName: "Day 2: Legs (Week A)",
+          avgHr: 144,
+          maxHr: 176,
+          activeCals: 465,
+          notes: "Goblet squats + SL RDLs superset lit up hamstrings",
+          synced: true,
+          sets: [
+            { exerciseId: "EX_DB_GOBLET_SQUAT", exerciseName: "DB Goblet Squats", supersetGroup: "1A", setNumber: 1, weight: 70, reps: 12 },
+            { exerciseId: "EX_DB_GOBLET_SQUAT", exerciseName: "DB Goblet Squats", supersetGroup: "1A", setNumber: 2, weight: 70, reps: 12 },
+            { exerciseId: "EX_DB_GOBLET_SQUAT", exerciseName: "DB Goblet Squats", supersetGroup: "1A", setNumber: 3, weight: 70, reps: 11 },
+            { exerciseId: "EX_DB_SL_RDL", exerciseName: "DB Single-Leg RDLs", supersetGroup: "1B", setNumber: 1, weight: 35, reps: 10 },
+            { exerciseId: "EX_DB_SL_RDL", exerciseName: "DB Single-Leg RDLs", supersetGroup: "1B", setNumber: 2, weight: 35, reps: 10 },
+            { exerciseId: "EX_DB_SL_RDL", exerciseName: "DB Single-Leg RDLs", supersetGroup: "1B", setNumber: 3, weight: 35, reps: 10 },
+            { exerciseId: "EX_LUNGES", exerciseName: "Lunges", supersetGroup: "2A", setNumber: 1, weight: 40, reps: 10 },
+            { exerciseId: "EX_LUNGES", exerciseName: "Lunges", supersetGroup: "2A", setNumber: 2, weight: 40, reps: 10 },
+            { exerciseId: "EX_LUNGES", exerciseName: "Lunges", supersetGroup: "2A", setNumber: 3, weight: 40, reps: 10 },
+            { exerciseId: "EX_DB_HIP_THRUST", exerciseName: "DB Bench Hip Thrusts", supersetGroup: "2B", setNumber: 1, weight: 75, reps: 12 },
+            { exerciseId: "EX_DB_HIP_THRUST", exerciseName: "DB Bench Hip Thrusts", supersetGroup: "2B", setNumber: 2, weight: 75, reps: 12 },
+            { exerciseId: "EX_DB_HIP_THRUST", exerciseName: "DB Bench Hip Thrusts", supersetGroup: "2B", setNumber: 3, weight: 75, reps: 12 },
+            { exerciseId: "EX_CALF_RAISE", exerciseName: "Calf Raises", supersetGroup: "3A", setNumber: 1, weight: 50, reps: 15 },
+            { exerciseId: "EX_CALF_RAISE", exerciseName: "Calf Raises", supersetGroup: "3A", setNumber: 2, weight: 50, reps: 15 },
+            { exerciseId: "EX_CALF_RAISE", exerciseName: "Calf Raises", supersetGroup: "3A", setNumber: 3, weight: 50, reps: 15 },
+            { exerciseId: "EX_BICYCLES", exerciseName: "Bicycles", supersetGroup: "3B", setNumber: 1, weight: 0, reps: 15 },
+            { exerciseId: "EX_BICYCLES", exerciseName: "Bicycles", supersetGroup: "3B", setNumber: 2, weight: 0, reps: 15 },
+            { exerciseId: "EX_BICYCLES", exerciseName: "Bicycles", supersetGroup: "3B", setNumber: 3, weight: 0, reps: 15 }
+          ]
+        },
+        {
+          sessionId: "SES_903",
+          timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+          templateId: "Pull_A",
+          templateName: "Day 3: Pull (Week A)",
+          avgHr: 129,
+          maxHr: 158,
+          activeCals: 360,
+          notes: "Heavy DB static holds fried grip after SA rows",
+          synced: true,
+          sets: [
+            { exerciseId: "EX_CABLE_ROW", exerciseName: "Cable Rows", supersetGroup: "1A", setNumber: 1, weight: 120, reps: 10 },
+            { exerciseId: "EX_CABLE_ROW", exerciseName: "Cable Rows", supersetGroup: "1A", setNumber: 2, weight: 120, reps: 10 },
+            { exerciseId: "EX_CABLE_ROW", exerciseName: "Cable Rows", supersetGroup: "1A", setNumber: 3, weight: 125, reps: 9 },
+            { exerciseId: "EX_INC_DB_CURL", exerciseName: "Seated Incline DB Bicep Curls", supersetGroup: "1B", setNumber: 1, weight: 25, reps: 10 },
+            { exerciseId: "EX_INC_DB_CURL", exerciseName: "Seated Incline DB Bicep Curls", supersetGroup: "1B", setNumber: 2, weight: 25, reps: 10 },
+            { exerciseId: "EX_INC_DB_CURL", exerciseName: "Seated Incline DB Bicep Curls", supersetGroup: "1B", setNumber: 3, weight: 25, reps: 9 },
+            { exerciseId: "EX_SA_DB_ROW", exerciseName: "Single-Arm DB Rows", supersetGroup: "2A", setNumber: 1, weight: 65, reps: 10 },
+            { exerciseId: "EX_SA_DB_ROW", exerciseName: "Single-Arm DB Rows", supersetGroup: "2A", setNumber: 2, weight: 65, reps: 10 },
+            { exerciseId: "EX_SA_DB_ROW", exerciseName: "Single-Arm DB Rows", supersetGroup: "2A", setNumber: 3, weight: 65, reps: 10 },
+            { exerciseId: "EX_DB_STATIC_HOLD", exerciseName: "Heavy DB Static Holds", supersetGroup: "2B", setNumber: 1, weight: 80, reps: 10 },
+            { exerciseId: "EX_DB_STATIC_HOLD", exerciseName: "Heavy DB Static Holds", supersetGroup: "2B", setNumber: 2, weight: 80, reps: 10 },
+            { exerciseId: "EX_DB_STATIC_HOLD", exerciseName: "Heavy DB Static Holds", supersetGroup: "2B", setNumber: 3, weight: 80, reps: 10 },
+            { exerciseId: "EX_CABLE_PULLDOWN", exerciseName: "Cable Pulldowns", supersetGroup: "3A", setNumber: 1, weight: 130, reps: 10 },
+            { exerciseId: "EX_CABLE_PULLDOWN", exerciseName: "Cable Pulldowns", supersetGroup: "3A", setNumber: 2, weight: 130, reps: 10 },
+            { exerciseId: "EX_CABLE_PULLDOWN", exerciseName: "Cable Pulldowns", supersetGroup: "3A", setNumber: 3, weight: 130, reps: 9 },
+            { exerciseId: "EX_HAMMER_CURL", exerciseName: "Hammer Curls", supersetGroup: "3B", setNumber: 1, weight: 30, reps: 10 },
+            { exerciseId: "EX_HAMMER_CURL", exerciseName: "Hammer Curls", supersetGroup: "3B", setNumber: 2, weight: 30, reps: 10 },
+            { exerciseId: "EX_HAMMER_CURL", exerciseName: "Hammer Curls", supersetGroup: "3B", setNumber: 3, weight: 30, reps: 10 }
+          ]
+        }
+      ],
+      cardioHistory: [
+        {
+          sessionId: "CRD_801",
+          timestamp: new Date(Date.now() - 86400000 * 1).toISOString(),
+          modality: "Treadmill Incline",
+          durationMin: 30,
+          distanceMi: 1.75,
+          inclinePct: 12.0,
+          paceOrSpeed: "3.5 mph",
+          intervalNotes: "12% Incline @ 3.5 mph steady Zone 2",
+          avgHr: 139,
+          maxHr: 154,
+          activeCals: 345,
+          synced: true
+        },
+        {
+          sessionId: "CRD_802",
+          timestamp: new Date(Date.now() - 86400000 * 4).toISOString(),
+          modality: "VO2 Max Intervals",
+          durationMin: 28,
+          distanceMi: 3.4,
+          inclinePct: 2.0,
+          paceOrSpeed: "10.2 mph work / 3.5 mph rec",
+          intervalNotes: "4x4 min @ 10.2 mph (2% inc) with 3 min active walk recovery",
+          avgHr: 158,
+          maxHr: 186,
+          activeCals: 430,
+          synced: true
+        }
+      ],
+      pendingQueue: [],
+      activeDraft: null
+    };
+
+    const STORAGE_KEY = "PULSESHEET_V2_STATE";
+
+    const app = {
+      state: null,
+      editingExerciseId: null,
+
+      init() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.schemaVersion === DEFAULT_DB.schemaVersion) {
+              this.state = parsed;
+            } else {
+              this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
+              this.saveState();
+            }
+          } catch (e) {
+            this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
+          }
+        } else {
+          this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
+          this.saveState();
+        }
+
+        // Populate GAS code block & inputs
+        document.getElementById("gasCodeBlock").textContent = GOOGLE_APPS_SCRIPT_CODE;
+        document.getElementById("gasWebhookUrlInput").value = this.state.config.webhookUrl || "";
+        document.getElementById("gasSecretKeyInput").value = this.state.config.secretKey || "";
+        document.getElementById("iosShortcutNameInput").value = this.state.config.shortcutName || "SyncWatchHR";
+
+        const baseUrl = window.location.origin + window.location.pathname;
+        document.getElementById("shortcutReturnUrlPreview").textContent =
+          `${baseUrl}?avg_hr=[AvgHR]&max_hr=[MaxHR]&cals=[ActiveEnergy]`;
+
+        // Check if returning from iOS Shortcut with URL query parameters (?avg_hr=145&max_hr=178&cals=390)
+        this.checkIncomingShortcutUrlParams();
+
+        this.renderDashboard();
+        this.updateSyncStatusUI();
+        lucide.createIcons();
+      },
+
+      saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+        this.updateSyncStatusUI();
+      },
+
+      showToast(msg, iconName = "check-circle-2", colorClass = "text-ios-green") {
+        const container = document.getElementById("toastContainer");
+        const msgEl = document.getElementById("toastMessage");
+        const iconEl = document.getElementById("toastIcon");
+        msgEl.textContent = msg;
+        iconEl.setAttribute("data-lucide", iconName);
+        iconEl.className = `w-4 h-4 shrink-0 ${colorClass}`;
+        lucide.createIcons();
+
+        container.classList.remove("opacity-0", "-translate-y-2");
+        container.classList.add("opacity-100", "translate-y-0");
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => {
+          container.classList.add("opacity-0", "-translate-y-2");
+          container.classList.remove("opacity-100", "translate-y-0");
+        }, 2800);
+      },
+
+      navigate(viewName) {
+        ["dashboard", "strength", "cardio"].forEach(v => {
+          const el = document.getElementById(`view-${v}`);
+          if (el) {
+            if (v === viewName) el.classList.remove("hidden");
+            else el.classList.add("hidden");
+          }
+        });
+        if (viewName === "dashboard") {
+          this.renderDashboard();
+        }
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        lucide.createIcons();
+      },
+
+      switchDashboardTab(tab) {
+        const sBtn = document.getElementById("tabBtn-strength");
+        const cBtn = document.getElementById("tabBtn-cardio");
+        const sPanel = document.getElementById("dash-strength-panel");
+        const cPanel = document.getElementById("dash-cardio-panel");
+
+        if (tab === "strength") {
+          sBtn.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-ios-elevated text-white shadow";
+          cBtn.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-zinc-400 hover:text-white";
+          sPanel.classList.remove("hidden");
+          cPanel.classList.add("hidden");
+        } else {
+          cBtn.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-ios-elevated text-white shadow";
+          sBtn.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-zinc-400 hover:text-white";
+          cPanel.classList.remove("hidden");
+          sPanel.classList.add("hidden");
+        }
+      },
+
+      setWeekFilter(week) {
+        this.state.config.weekFilter = week;
+        this.saveState();
+        this.renderDashboard();
+      },
+
+      // ==================== DASHBOARD RENDERING ====================
+      renderDashboard() {
+        // 1. Check active draft banner
+        const banner = document.getElementById("activeDraftBanner");
+        if (this.state.activeDraft) {
+          banner.classList.remove("hidden");
+          banner.classList.add("flex");
+          document.getElementById("draftTitleText").textContent =
+            this.state.activeDraft.type === "strength"
+              ? this.state.activeDraft.templateName
+              : `${this.state.activeDraft.modality} Session`;
+        } else {
+          banner.classList.add("hidden");
+          banner.classList.remove("flex");
+        }
+
+        // Update Week A / Week B / ALL filter pill styles
+        const currentFilter = (this.state.config && this.state.config.weekFilter) || "A";
+        ["A", "B", "ALL"].forEach(w => {
+          const btn = document.getElementById(`weekBtn-${w}`);
+          if (!btn) return;
+          if (w === currentFilter) {
+            btn.className = "px-2.5 py-1 rounded-lg bg-ios-blue text-white transition shadow";
+          } else {
+            btn.className = "px-2.5 py-1 rounded-lg text-zinc-400 hover:text-white transition";
+          }
+        });
+
+        // 2. Render Strength Split Templates (filtered by Week A, Week B, or All 6)
+        const grid = document.getElementById("strengthTemplatesGrid");
+        const accentMap = {
+          blue: { badge: "bg-ios-blue/15 text-ios-blue border-ios-blue/30", icon: "text-ios-blue" },
+          purple: { badge: "bg-ios-purple/15 text-ios-purple border-ios-purple/30", icon: "text-ios-purple" },
+          green: { badge: "bg-ios-green/15 text-ios-green border-ios-green/30", icon: "text-ios-green" }
+        };
+
+        const filteredTemplates = Object.values(this.state.templates).filter(tpl => {
+          if (currentFilter === "ALL") return true;
+          return tpl.week === currentFilter;
+        });
+
+        grid.innerHTML = filteredTemplates.map(tpl => {
+          const colors = accentMap[tpl.accent] || accentMap.blue;
+          const lastSession = this.state.strengthHistory.find(h => h.templateId === tpl.id);
+          const lastDateStr = lastSession
+            ? new Date(lastSession.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : "Ready";
+
+          // Group preview by SS1, SS2, SS3
+          const ssGroups = {};
+          tpl.items.forEach(item => {
+            const ssNum = (item.supersetGroup.match(/^\d+/) || ["1"])[0];
+            if (!ssGroups[ssNum]) ssGroups[ssNum] = [];
+            ssGroups[ssNum].push(item);
+          });
+
+          const exPreviews = Object.keys(ssGroups).map(ssNum => {
+            const pair = ssGroups[ssNum];
+            const pairRows = pair.map(item => {
+              const ex = this.state.exercises[item.exerciseId];
+              return `<div class="flex items-center justify-between text-xs text-zinc-200 py-0.5">
+                <span class="truncate pr-2"><strong class="font-mono text-ios-blue mr-1.5">${item.supersetGroup}</strong>${ex ? ex.name : item.exerciseId}</span>
+                <span class="font-mono text-[11px] text-zinc-400 shrink-0">${item.targetSets}×${item.targetReps}</span>
+              </div>`;
+            }).join("");
+
+            return `
+              <div class="p-2 rounded-xl bg-ios-bg/70 border border-zinc-800/80 space-y-0.5">
+                <div class="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-500">SS${ssNum} Superset</div>
+                ${pairRows}
+              </div>
+            `;
+          }).join("");
+
+          return `
+            <div onclick="app.startStrengthWorkout('${tpl.id}')" class="p-4 rounded-2xl bg-ios-card hover:bg-ios-elevated border border-ios-border transition cursor-pointer flex flex-col justify-between active:scale-[0.99]">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md border ${colors.badge}">${tpl.badge}</span>
+                  <span class="text-[11px] font-mono text-zinc-400 flex items-center gap-1">
+                    <i data-lucide="calendar" class="w-3 h-3"></i> ${lastDateStr}
+                  </span>
+                </div>
+                <h3 class="font-bold text-base text-white">${tpl.name}</h3>
+                <p class="text-xs text-zinc-400 mb-3">${tpl.subtitle}</p>
+                <div class="space-y-2 pt-1">
+                  ${exPreviews}
+                </div>
+              </div>
+              <div class="mt-3.5 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs font-bold text-ios-blue">
+                <span>Start ${tpl.name}</span>
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        // 3. Render Recent Workout History (Merged Strength & Cardio)
+        const historyContainer = document.getElementById("recentHistoryList");
+        const combined = [
+          ...this.state.strengthHistory.map(s => ({ ...s, _kind: "strength" })),
+          ...this.state.cardioHistory.map(c => ({ ...c, _kind: "cardio" }))
+        ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 10);
+
+        if (combined.length === 0) {
+          historyContainer.innerHTML = `<div class="p-6 rounded-2xl bg-ios-card border border-ios-border text-center text-xs text-zinc-500">No sessions logged yet. Pick a split above!</div>`;
+        } else {
+          historyContainer.innerHTML = combined.map(item => {
+            const dateStr = new Date(item.timestamp).toLocaleDateString(undefined, {
+              weekday: "short", month: "short", day: "numeric"
+            });
+            const syncBadge = item.synced
+              ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ios-green/15 text-ios-green">Synced</span>`
+              : `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Local</span>`;
+
+            const hrBadges = (item.avgHr || item.maxHr)
+              ? `<div class="flex items-center gap-2 mt-2">
+                  ${item.avgHr ? `<span class="text-[11px] font-mono px-2 py-0.5 rounded-lg bg-ios-pink/15 text-ios-pink flex items-center gap-1"><i data-lucide="heart" class="w-3 h-3"></i> Avg ${item.avgHr} bpm</span>` : ""}
+                  ${item.maxHr ? `<span class="text-[11px] font-mono px-2 py-0.5 rounded-lg bg-ios-orange/15 text-ios-orange">Max ${item.maxHr} bpm</span>` : ""}
+                  ${item.activeCals ? `<span class="text-[11px] font-mono px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-300">${item.activeCals} kcal</span>` : ""}
+                 </div>`
+              : "";
+
+            if (item._kind === "strength") {
+              const totalSets = item.sets ? item.sets.length : 0;
+              const topWeight = item.sets && item.sets.length
+                ? Math.max(...item.sets.map(s => Number(s.weight) || 0))
+                : 0;
+              return `
+                <div class="p-3.5 rounded-2xl bg-ios-card border border-ios-border">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2 h-2 rounded-full bg-ios-blue"></span>
+                      <h4 class="font-bold text-xs text-white">${item.templateName || item.templateId}</h4>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      ${syncBadge}
+                      <span class="text-[11px] font-mono text-zinc-400">${dateStr}</span>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-zinc-400 mt-1">${totalSets} completed sets • Top load: ${topWeight} lbs ${item.notes ? `• "${item.notes}"` : ""}</p>
+                  ${hrBadges}
+                </div>
+              `;
+            } else {
+              return `
+                <div class="p-3.5 rounded-2xl bg-ios-card border border-ios-border">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2 h-2 rounded-full bg-ios-pink"></span>
+                      <h4 class="font-bold text-xs text-white">${item.modality}</h4>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      ${syncBadge}
+                      <span class="text-[11px] font-mono text-zinc-400">${dateStr}</span>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-zinc-300 font-mono mt-1">
+                    ${item.durationMin || 0} min • ${item.distanceMi || 0} mi ${item.inclinePct ? `• ${item.inclinePct}% Incline` : ""} ${item.paceOrSpeed ? `@ ${item.paceOrSpeed}` : ""}
+                  </p>
+                  ${item.intervalNotes ? `<p class="text-[11px] text-zinc-400 mt-0.5">${item.intervalNotes}</p>` : ""}
+                  ${hrBadges}
+                </div>
+              `;
+            }
+          }).join("");
+        }
+
+        lucide.createIcons();
+      },
+
+      // ==================== ACTIVE STRENGTH WORKOUT LOGIC ====================
+      getGhostSetForExercise(exerciseId, setNumber) {
+        // Search strengthHistory from newest to oldest for matching exerciseId
+        for (const session of this.state.strengthHistory) {
+          if (!session.sets) continue;
+          const matchingExSets = session.sets.filter(s => s.exerciseId === exerciseId);
+          if (matchingExSets.length > 0) {
+            const exactSet = matchingExSets.find(s => Number(s.setNumber) === Number(setNumber));
+            return exactSet || matchingExSets[matchingExSets.length - 1];
+          }
+        }
+        return null;
+      },
+
+      startStrengthWorkout(templateId) {
+        const tpl = this.state.templates[templateId];
+        if (!tpl) return;
+
+        const sessionId = "SES_" + Math.random().toString(36).substring(2, 7).toUpperCase();
+        const exercisesDraft = tpl.items.map(item => {
+          const ex = this.state.exercises[item.exerciseId] || {
+            id: item.exerciseId,
+            name: item.exerciseId,
+            equipment: "Dumbbell",
+            setupNotes: "Standard setup",
+            defaultWeight: 35,
+            defaultReps: 10
+          };
+
+          const fallbackWeight = ex.defaultWeight !== undefined ? ex.defaultWeight : (ex.equipment === "Bodyweight" ? 0 : 35);
+          const fallbackReps = ex.defaultReps !== undefined ? ex.defaultReps : (parseInt(item.targetReps, 10) || 10);
+
+          const sets = [];
+          for (let s = 1; s <= item.targetSets; s++) {
+            const ghost = this.getGhostSetForExercise(item.exerciseId, s);
+            const gWeight = ghost !== null && ghost.weight !== undefined ? ghost.weight : fallbackWeight;
+            const gReps = ghost !== null && ghost.reps !== undefined ? ghost.reps : fallbackReps;
+            sets.push({
+              setNumber: s,
+              weight: ghost ? ghost.weight : "",
+              reps: ghost ? ghost.reps : "",
+              ghostWeight: gWeight,
+              ghostReps: gReps,
+              completed: false
+            });
+          }
+
+          return {
+            exerciseId: item.exerciseId,
+            name: ex.name,
+            equipment: ex.equipment,
+            setupNotes: ex.setupNotes || "",
+            supersetGroup: item.supersetGroup,
+            targetSets: item.targetSets,
+            targetReps: item.targetReps,
+            sets
+          };
+        });
+
+        this.state.activeDraft = {
+          type: "strength",
+          sessionId,
+          templateId: tpl.id,
+          templateName: tpl.name,
+          badge: tpl.badge,
+          startedAt: new Date().toISOString(),
+          avgHr: "",
+          maxHr: "",
+          activeCals: "",
+          notes: "",
+          exercises: exercisesDraft
+        };
+
+        this.saveState();
+        this.renderStrengthWorkout();
+        this.navigate("strength");
+      },
+
+      resumeDraft() {
+        if (!this.state.activeDraft) return;
+        if (this.state.activeDraft.type === "strength") {
+          this.renderStrengthWorkout();
+          this.navigate("strength");
+        } else {
+          this.renderCardioWorkout();
+          this.navigate("cardio");
+        }
+      },
+
+      renderStrengthWorkout() {
+        const draft = this.state.activeDraft;
+        if (!draft || draft.type !== "strength") return;
+
+        document.getElementById("activeStrengthBadge").textContent = draft.badge || draft.templateId;
+        document.getElementById("activeStrengthSessionId").textContent = `#${draft.sessionId}`;
+        document.getElementById("activeStrengthTitle").textContent = draft.templateName;
+
+        document.getElementById("strengthAvgHr").value = draft.avgHr || "";
+        document.getElementById("strengthMaxHr").value = draft.maxHr || "";
+        document.getElementById("strengthActiveCals").value = draft.activeCals || "";
+        document.getElementById("strengthSessionNotes").value = draft.notes || "";
+
+        // Group exercises by Superset Root number (e.g., "1A" & "1B" -> Group "1")
+        const groups = {};
+        draft.exercises.forEach((ex, exIdx) => {
+          const rootNum = (ex.supersetGroup.match(/^\d+/) || [exIdx + 1])[0];
+          if (!groups[rootNum]) groups[rootNum] = [];
+          groups[rootNum].push({ ...ex, exIdx });
+        });
+
+        const container = document.getElementById("supersetGroupsContainer");
+        container.innerHTML = Object.keys(groups).map(groupKey => {
+          const items = groups[groupKey];
+          const isSuperset = items.length > 1;
+
+          const exercisesHtml = items.map((ex, idxInGroup) => {
+            const masterEx = this.state.exercises[ex.exerciseId];
+            const currentSetupNotes = masterEx ? masterEx.setupNotes : ex.setupNotes;
+
+            const setsHtml = ex.sets.map((setObj, setIdx) => {
+              const isDone = setObj.completed;
+              const rowBg = isDone
+                ? "bg-ios-green/10 border-ios-green/40"
+                : "bg-ios-bg border-ios-border";
+              const btnBg = isDone
+                ? "bg-ios-green text-zinc-950 border-ios-green shadow-md shadow-ios-green/20"
+                : "bg-zinc-800/90 text-zinc-400 border-zinc-700 hover:text-white";
+
+              return `
+                <div class="grid grid-cols-12 gap-2 items-center p-2 rounded-xl border ${rowBg} transition">
+                  <!-- Set Number & Ghost Reference -->
+                  <div class="col-span-3 flex flex-col">
+                    <span class="text-xs font-mono font-bold ${isDone ? 'text-ios-green' : 'text-zinc-300'}">SET ${setObj.setNumber}</span>
+                    <span class="text-[10px] font-mono text-zinc-500">Last: ${setObj.ghostWeight}×${setObj.ghostReps}</span>
+                  </div>
+
+                  <!-- Weight Input + Quick Stepper -->
+                  <div class="col-span-4">
+                    <div class="flex items-center bg-ios-card rounded-lg border border-zinc-800 px-1.5 py-1">
+                      <button type="button" onclick="app.stepSetWeight(${ex.exIdx}, ${setIdx}, -5)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">-</button>
+                      <input type="number" step="2.5" inputmode="decimal"
+                        value="${setObj.weight}"
+                        placeholder="${setObj.ghostWeight}"
+                        oninput="app.updateSetField(${ex.exIdx}, ${setIdx}, 'weight', this.value)"
+                        class="w-full text-center bg-transparent font-mono text-sm font-bold text-white focus:outline-none placeholder:text-zinc-600" />
+                      <button type="button" onclick="app.stepSetWeight(${ex.exIdx}, ${setIdx}, 5)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">+</button>
+                    </div>
+                  </div>
+
+                  <!-- Reps Input -->
+                  <div class="col-span-3">
+                    <div class="flex items-center bg-ios-card rounded-lg border border-zinc-800 px-1.5 py-1">
+                      <button type="button" onclick="app.stepSetReps(${ex.exIdx}, ${setIdx}, -1)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">-</button>
+                      <input type="number" inputmode="numeric"
+                        value="${setObj.reps}"
+                        placeholder="${setObj.ghostReps}"
+                        oninput="app.updateSetField(${ex.exIdx}, ${setIdx}, 'reps', this.value)"
+                        class="w-full text-center bg-transparent font-mono text-sm font-bold text-white focus:outline-none placeholder:text-zinc-600" />
+                      <button type="button" onclick="app.stepSetReps(${ex.exIdx}, ${setIdx}, 1)" class="text-zinc-400 hover:text-white px-1 text-xs font-mono font-bold active:scale-90">+</button>
+                    </div>
+                  </div>
+
+                  <!-- One-Tap Complete Checkmark (Strictly Timer-Free) -->
+                  <div class="col-span-2 flex justify-end">
+                    <button type="button" onclick="app.toggleSetComplete(${ex.exIdx}, ${setIdx})" class="w-10 h-9 rounded-xl border flex items-center justify-center active:scale-90 transition ${btnBg}">
+                      <i data-lucide="check" class="w-4 h-4 stroke-[3]"></i>
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join("");
+
+            return `
+              <div class="${idxInGroup > 0 ? 'pt-4 border-t border-zinc-800/90' : ''} space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="px-2 py-0.5 rounded-md text-xs font-mono font-extrabold bg-ios-blue/20 text-ios-blue border border-ios-blue/30">${ex.supersetGroup}</span>
+                      <h4 class="font-bold text-sm text-white">${ex.name}</h4>
+                    </div>
+
+                    <!-- Inline Editable Equipment & Setup Badge -->
+                    <button type="button" onclick="app.openEditSetupModal('${ex.exerciseId}')" class="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ios-elevated hover:bg-zinc-800 border border-ios-border text-[11px] text-zinc-300 transition">
+                      <i data-lucide="sliders-horizontal" class="w-3 h-3 text-ios-blue"></i>
+                      <span>${currentSetupNotes || ex.equipment}</span>
+                      <i data-lucide="pencil" class="w-2.5 h-2.5 text-zinc-500"></i>
+                    </button>
+                  </div>
+
+                  <span class="text-[11px] font-mono text-zinc-400 shrink-0">Target: ${ex.targetSets || ex.sets.length} × ${ex.targetReps}</span>
+                </div>
+
+                <!-- Column Headers -->
+                <div class="grid grid-cols-12 gap-2 px-2 text-[10px] font-mono uppercase text-zinc-500">
+                  <div class="col-span-3">Set / Last</div>
+                  <div class="col-span-4 text-center">Lbs (-/+2.5)</div>
+                  <div class="col-span-3 text-center">Reps</div>
+                  <div class="col-span-2 text-right">Done</div>
+                </div>
+
+                <!-- Set Rows -->
+                <div class="space-y-2">
+                  ${setsHtml}
+                </div>
+
+                <!-- Add / Remove Set Row Controls -->
+                <div class="flex items-center justify-between pt-1">
+                  <button type="button" onclick="app.addSetToExercise(${ex.exIdx})" class="text-[11px] font-semibold text-ios-blue hover:underline flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Set
+                  </button>
+                  ${ex.sets.length > 1 ? `
+                    <button type="button" onclick="app.removeLastSetFromExercise(${ex.exIdx})" class="text-[11px] text-zinc-500 hover:text-ios-red">
+                      Remove Last Set
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join("");
+
+          return `
+            <div class="relative rounded-2xl bg-ios-card border border-ios-border p-4 pl-5 space-y-4 overflow-hidden">
+              <!-- Left Connecting Superset Accent Bar -->
+              <div class="absolute left-0 top-0 bottom-0 w-1.5 ${isSuperset ? 'bg-gradient-to-b from-ios-blue via-ios-purple to-ios-blue' : 'bg-zinc-700'}"></div>
+              <div class="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                <span class="text-xs font-mono font-bold uppercase tracking-wider ${isSuperset ? 'text-ios-blue' : 'text-zinc-400'}">
+                  ${isSuperset ? `SS${groupKey} • Superset (${items.map(i => i.supersetGroup).join(' + ')})` : `Block ${groupKey}`}
+                </span>
+                <span class="text-[10px] font-mono text-zinc-500">Alternate ${items.map(i => i.supersetGroup).join(' ↔ ')}</span>
+              </div>
+              ${exercisesHtml}
+            </div>
+          `;
+        }).join("");
+
+        lucide.createIcons();
+      },
+
+      updateSetField(exIdx, setIdx, field, val) {
+        const setObj = this.state.activeDraft.exercises[exIdx].sets[setIdx];
+        setObj[field] = val;
+        this.saveState();
+      },
+
+      stepSetWeight(exIdx, setIdx, delta) {
+        const setObj = this.state.activeDraft.exercises[exIdx].sets[setIdx];
+        const base = setObj.weight !== "" ? parseFloat(setObj.weight) : parseFloat(setObj.ghostWeight || 0);
+        // Step by 2.5 lbs for fine dumbbell/cable adjustments
+        const stepDelta = delta > 0 ? 2.5 : -2.5;
+        setObj.weight = Math.max(0, base + stepDelta);
+        this.saveState();
+        this.renderStrengthWorkout();
+      },
+
+      stepSetReps(exIdx, setIdx, delta) {
+        const setObj = this.state.activeDraft.exercises[exIdx].sets[setIdx];
+        const base = setObj.reps !== "" ? parseInt(setObj.reps, 10) : parseInt(setObj.ghostReps || 10, 10);
+        setObj.reps = Math.max(1, base + delta);
+        this.saveState();
+        this.renderStrengthWorkout();
+      },
+
+      toggleSetComplete(exIdx, setIdx) {
+        const setObj = this.state.activeDraft.exercises[exIdx].sets[setIdx];
+        // If blank when checking off, auto-commit the ghost placeholder values!
+        if (!setObj.completed) {
+          if (setObj.weight === "" || setObj.weight === null) setObj.weight = setObj.ghostWeight;
+          if (setObj.reps === "" || setObj.reps === null) setObj.reps = setObj.ghostReps;
+          setObj.completed = true;
+        } else {
+          setObj.completed = false;
+        }
+        this.saveState();
+        this.renderStrengthWorkout();
+      },
+
+      addSetToExercise(exIdx) {
+        const ex = this.state.activeDraft.exercises[exIdx];
+        const nextNum = ex.sets.length + 1;
+        const prevSet = ex.sets[ex.sets.length - 1] || { weight: 45, reps: 10, ghostWeight: 45, ghostReps: 10 };
+        ex.sets.push({
+          setNumber: nextNum,
+          weight: prevSet.weight,
+          reps: prevSet.reps,
+          ghostWeight: prevSet.ghostWeight,
+          ghostReps: prevSet.ghostReps,
+          completed: false
+        });
+        this.saveState();
+        this.renderStrengthWorkout();
+      },
+
+      removeLastSetFromExercise(exIdx) {
+        const ex = this.state.activeDraft.exercises[exIdx];
+        if (ex.sets.length > 1) {
+          ex.sets.pop();
+          this.saveState();
+          this.renderStrengthWorkout();
+        }
+      },
+
+      updateDraftWatchTelemetry(field, val) {
+        if (!this.state.activeDraft) return;
+        this.state.activeDraft[field] = val;
+        this.saveState();
+      },
+
+      openEditSetupModal(exerciseId) {
+        this.editingExerciseId = exerciseId;
+        const ex = this.state.exercises[exerciseId];
+        if (!ex) return;
+        document.getElementById("editSetupModalTitle").textContent = `${ex.name} Setup`;
+        document.getElementById("editSetupNotesInput").value = ex.setupNotes || "";
+        this.openModal("editSetupModal");
+      },
+
+      saveExerciseSetupNotes() {
+        const val = document.getElementById("editSetupNotesInput").value.trim();
+        if (this.editingExerciseId && this.state.exercises[this.editingExerciseId]) {
+          this.state.exercises[this.editingExerciseId].setupNotes = val;
+          // Also update inside active draft if open
+          if (this.state.activeDraft && this.state.activeDraft.type === "strength") {
+            this.state.activeDraft.exercises.forEach(e => {
+              if (e.exerciseId === this.editingExerciseId) e.setupNotes = val;
+            });
+            this.renderStrengthWorkout();
+          }
+          this.saveState();
+          this.showToast("Equipment setup badge updated");
+        }
+        this.closeModal("editSetupModal");
+      },
+
+      openAddExerciseToActiveModal() {
+        if (this.state.activeDraft && this.state.activeDraft.templateId) {
+          document.getElementById("newExTemplateId").value = this.state.activeDraft.templateId;
+        }
+        this.openModal("customizerModal");
+      },
+
+      async finishStrengthWorkout() {
+        const draft = this.state.activeDraft;
+        if (!draft) return;
+
+        // Collect all completed sets (or sets with weight/reps entered)
+        const flatSets = [];
+        draft.exercises.forEach(ex => {
+          const masterEx = this.state.exercises[ex.exerciseId];
+          const setupNotes = masterEx ? masterEx.setupNotes : ex.setupNotes;
+          ex.sets.forEach(s => {
+            if (s.completed || (s.weight !== "" && s.reps !== "")) {
+              flatSets.push({
+                exercise_id: ex.exerciseId,
+                exerciseId: ex.exerciseId,
+                exercise_name: ex.name,
+                exerciseName: ex.name,
+                superset_group: ex.supersetGroup,
+                supersetGroup: ex.supersetGroup,
+                set_number: s.setNumber,
+                setNumber: s.setNumber,
+                weight_lbs: Number(s.weight || s.ghostWeight),
+                weight: Number(s.weight || s.ghostWeight),
+                reps: Number(s.reps || s.ghostReps),
+                setup_notes: setupNotes
+              });
+            }
+          });
+        });
+
+        if (flatSets.length === 0) {
+          this.showToast("Check off at least 1 set before finishing", "alert-circle", "text-ios-orange");
+          return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const sessionRecord = {
+          sessionId: draft.sessionId,
+          timestamp: nowIso,
+          templateId: draft.templateId,
+          templateName: draft.templateName,
+          avgHr: draft.avgHr ? Number(draft.avgHr) : null,
+          maxHr: draft.maxHr ? Number(draft.maxHr) : null,
+          activeCals: draft.activeCals ? Number(draft.activeCals) : null,
+          notes: draft.notes || "",
+          synced: false,
+          sets: flatSets
+        };
+
+        this.state.strengthHistory.unshift(sessionRecord);
+        this.state.activeDraft = null;
+
+        const apiPayload = {
+          action: "log_strength",
+          secret: this.state.config.secretKey || "",
+          timestamp: nowIso,
+          session_id: sessionRecord.sessionId,
+          template_id: sessionRecord.templateId,
+          avg_hr: sessionRecord.avgHr || "",
+          max_hr: sessionRecord.maxHr || "",
+          active_cals: sessionRecord.activeCals || "",
+          notes: sessionRecord.notes,
+          sets: flatSets
+        };
+
+        this.saveState();
+        this.navigate("dashboard");
+        await this.pushPayloadToGoogleSheets(apiPayload, sessionRecord.sessionId);
+      },
+
+      // ==================== ACTIVE CARDIO / INTERVAL WORKOUT LOGIC ====================
+      startCardioWorkout(modality) {
+        const sessionId = "CRD_" + Math.random().toString(36).substring(2, 7).toUpperCase();
+        this.state.activeDraft = {
+          type: "cardio",
+          sessionId,
+          modality: modality || "Treadmill Incline",
+          durationMin: "",
+          distanceMi: "",
+          inclinePct: modality === "Treadmill Incline" ? "12.0" : (modality === "VO2 Max Intervals" ? "2.0" : "0"),
+          paceOrSpeed: "",
+          intervalNotes: "",
+          avgHr: "",
+          maxHr: "",
+          activeCals: ""
+        };
+        this.saveState();
+        this.renderCardioWorkout();
+        this.navigate("cardio");
+      },
+
+      setCardioModality(modality) {
+        if (!this.state.activeDraft || this.state.activeDraft.type !== "cardio") return;
+        this.state.activeDraft.modality = modality;
+        this.saveState();
+        this.renderCardioWorkout();
+      },
+
+      renderCardioWorkout() {
+        const draft = this.state.activeDraft;
+        if (!draft || draft.type !== "cardio") return;
+
+        document.getElementById("activeCardioTitle").textContent = draft.modality;
+
+        ["Treadmill Incline", "VO2 Max Intervals", "Outdoor Run"].forEach(m => {
+          const btn = document.getElementById(`modBtn-${m}`);
+          if (m === draft.modality) {
+            btn.className = "py-2.5 px-2 rounded-xl border border-ios-pink bg-ios-pink/20 text-white text-xs font-bold transition";
+          } else {
+            btn.className = "py-2.5 px-2 rounded-xl border border-ios-border bg-ios-card text-zinc-400 text-xs font-bold transition";
+          }
+        });
+
+        // Find last session of this modality for Ghost Reference banner
+        const lastCardio = this.state.cardioHistory.find(c => c.modality === draft.modality);
+        const ghostEl = document.getElementById("cardioGhostText");
+        if (lastCardio) {
+          ghostEl.textContent = `Last ${draft.modality}: ${lastCardio.durationMin}m • ${lastCardio.distanceMi}mi • ${lastCardio.inclinePct}% inc @ ${lastCardio.paceOrSpeed} (${lastCardio.avgHr || '--'} bpm)`;
+        } else {
+          ghostEl.textContent = `No previous ${draft.modality} logged yet`;
+        }
+
+        document.getElementById("cardioDuration").value = draft.durationMin;
+        document.getElementById("cardioDistance").value = draft.distanceMi;
+        document.getElementById("cardioIncline").value = draft.inclinePct;
+        document.getElementById("cardioPace").value = draft.paceOrSpeed;
+        document.getElementById("cardioNotes").value = draft.intervalNotes;
+        document.getElementById("cardioAvgHr").value = draft.avgHr;
+        document.getElementById("cardioMaxHr").value = draft.maxHr;
+        document.getElementById("cardioActiveCals").value = draft.activeCals;
+      },
+
+      autofillCardioFromGhost() {
+        const draft = this.state.activeDraft;
+        if (!draft) return;
+        const lastCardio = this.state.cardioHistory.find(c => c.modality === draft.modality);
+        if (!lastCardio) return;
+        draft.durationMin = lastCardio.durationMin;
+        draft.distanceMi = lastCardio.distanceMi;
+        draft.inclinePct = lastCardio.inclinePct;
+        draft.paceOrSpeed = lastCardio.paceOrSpeed;
+        draft.intervalNotes = lastCardio.intervalNotes;
+        this.saveState();
+        this.renderCardioWorkout();
+        this.showToast("Filled with last session metrics");
+      },
+
+      updateCardioDraft() {
+        const draft = this.state.activeDraft;
+        if (!draft || draft.type !== "cardio") return;
+        draft.durationMin = document.getElementById("cardioDuration").value;
+        draft.distanceMi = document.getElementById("cardioDistance").value;
+        draft.inclinePct = document.getElementById("cardioIncline").value;
+        draft.paceOrSpeed = document.getElementById("cardioPace").value;
+        draft.intervalNotes = document.getElementById("cardioNotes").value;
+        draft.avgHr = document.getElementById("cardioAvgHr").value;
+        draft.maxHr = document.getElementById("cardioMaxHr").value;
+        draft.activeCals = document.getElementById("cardioActiveCals").value;
+        this.saveState();
+      },
+
+      stepCardioField(inputId, delta) {
+        const el = document.getElementById(inputId);
+        const curr = parseFloat(el.value || 0);
+        el.value = Math.max(0, curr + delta).toFixed(1);
+        this.updateCardioDraft();
+      },
+
+      setCardioPreset(text) {
+        document.getElementById("cardioNotes").value = text;
+        this.updateCardioDraft();
+      },
+
+      async finishCardioWorkout() {
+        this.updateCardioDraft();
+        const draft = this.state.activeDraft;
+        if (!draft) return;
+
+        if (!draft.durationMin && !draft.distanceMi) {
+          this.showToast("Enter duration or distance first", "alert-circle", "text-ios-orange");
+          return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const record = {
+          sessionId: draft.sessionId,
+          timestamp: nowIso,
+          modality: draft.modality,
+          durationMin: Number(draft.durationMin || 0),
+          distanceMi: Number(draft.distanceMi || 0),
+          inclinePct: Number(draft.inclinePct || 0),
+          paceOrSpeed: draft.paceOrSpeed || "",
+          intervalNotes: draft.intervalNotes || "",
+          avgHr: draft.avgHr ? Number(draft.avgHr) : null,
+          maxHr: draft.maxHr ? Number(draft.maxHr) : null,
+          activeCals: draft.activeCals ? Number(draft.activeCals) : null,
+          synced: false
+        };
+
+        this.state.cardioHistory.unshift(record);
+        this.state.activeDraft = null;
+
+        const apiPayload = {
+          action: "log_cardio",
+          secret: this.state.config.secretKey || "",
+          timestamp: nowIso,
+          session_id: record.sessionId,
+          modality: record.modality,
+          duration_min: record.durationMin,
+          distance_mi: record.distanceMi,
+          incline_pct: record.inclinePct,
+          pace_or_speed: record.paceOrSpeed,
+          interval_notes: record.intervalNotes,
+          avg_hr: record.avgHr || "",
+          max_hr: record.maxHr || "",
+          active_cals: record.activeCals || ""
+        };
+
+        this.saveState();
+        this.navigate("dashboard");
+        await this.pushPayloadToGoogleSheets(apiPayload, record.sessionId);
+      },
+
+      discardActiveWorkout() {
+        this.state.activeDraft = null;
+        this.saveState();
+        this.navigate("dashboard");
+        this.showToast("Workout session discarded", "trash-2", "text-zinc-400");
+      },
+
+      // ==================== APPLE WATCH iOS SHORTCUT INTEGRATION ====================
+      triggerWatchShortcut() {
+        const shortcutName = encodeURIComponent(this.state.config.shortcutName || "SyncWatchHR");
+        const sessionId = this.state.activeDraft ? this.state.activeDraft.sessionId : "NONE";
+        const shortcutUrl = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${encodeURIComponent(sessionId)}`;
+
+        this.showToast("Launching iOS Shortcut 'SyncWatchHR'...", "watch", "text-ios-pink");
+        window.location.href = shortcutUrl;
+      },
+
+      checkIncomingShortcutUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const avgHr = params.get("avg_hr") || params.get("avgHR");
+        const maxHr = params.get("max_hr") || params.get("maxHR");
+        const cals = params.get("cals") || params.get("activeCals");
+
+        if (avgHr || maxHr || cals) {
+          if (this.state.activeDraft) {
+            if (avgHr) this.state.activeDraft.avgHr = Math.round(Number(avgHr));
+            if (maxHr) this.state.activeDraft.maxHr = Math.round(Number(maxHr));
+            if (cals) this.state.activeDraft.activeCals = Math.round(Number(cals));
+            this.saveState();
+            setTimeout(() => {
+              this.resumeDraft();
+              this.showToast(`Apple Watch synced: ${avgHr || '--'} Avg / ${maxHr || '--'} Max BPM`, "heart-pulse", "text-ios-pink");
+            }, 250);
+          }
+          // Clean URL query params
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      },
+
+      simulateWatchShortcutCallback() {
+        const mockAvg = Math.floor(132 + Math.random() * 22);
+        const mockMax = Math.floor(165 + Math.random() * 20);
+        const mockCals = Math.floor(320 + Math.random() * 140);
+
+        if (this.state.activeDraft) {
+          this.state.activeDraft.avgHr = mockAvg;
+          this.state.activeDraft.maxHr = mockMax;
+          this.state.activeDraft.activeCals = mockCals;
+          this.saveState();
+          this.closeModal("setupModal");
+          this.resumeDraft();
+          this.showToast(`Watch HR Filled: ${mockAvg} Avg / ${mockMax} Max BPM`, "watch", "text-ios-pink");
+        } else {
+          this.closeModal("setupModal");
+          this.showToast(`Simulated Watch Read: ${mockAvg} Avg / ${mockMax} Max BPM (Start a workout to auto-fill!)`, "watch", "text-ios-pink");
+        }
+      },
+
+      // ==================== GOOGLE SHEETS SYNC ENGINE ====================
+      updateSyncStatusUI() {
+        const pendingCount = this.state.pendingQueue.length;
+        const retryBtn = document.getElementById("retrySyncBtn");
+        const badge = document.getElementById("pendingCountBadge");
+        const subText = document.getElementById("syncStatusSub");
+
+        if (pendingCount > 0) {
+          retryBtn.classList.remove("hidden");
+          retryBtn.classList.add("flex");
+          badge.textContent = `${pendingCount} unsynced`;
+        } else {
+          retryBtn.classList.add("hidden");
+          retryBtn.classList.remove("flex");
+        }
+
+        if (this.state.config.webhookUrl) {
+          subText.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-ios-green inline-block"></span><span>Google Sheets Connected</span>`;
+        } else {
+          subText.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-ios-blue inline-block"></span><span>Local Storage Mode</span>`;
+        }
+      },
+
+      async pushPayloadToGoogleSheets(payload, sessionId) {
+        const url = (this.state.config.webhookUrl || "").trim();
+        if (!url) {
+          this.showToast("Saved locally! Connect Google Sheets anytime to sync.", "check-circle-2", "text-ios-blue");
+          return;
+        }
+
+        try {
+          this.showToast("Syncing workout to Google Sheets...", "upload-cloud", "text-ios-blue");
+          // Using text/plain avoids CORS preflight rejection on Google Apps Script Web Apps
+          await fetch(url, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(payload)
+          });
+
+          // Mark session as synced
+          const sLog = this.state.strengthHistory.find(s => s.sessionId === sessionId);
+          if (sLog) sLog.synced = true;
+          const cLog = this.state.cardioHistory.find(c => c.sessionId === sessionId);
+          if (cLog) cLog.synced = true;
+
+          this.saveState();
+          this.renderDashboard();
+          this.showToast("Workout synced to Google Sheets!", "check-circle-2", "text-ios-green");
+        } catch (err) {
+          this.state.pendingQueue.push({ sessionId, payload });
+          this.saveState();
+          this.showToast("Offline — queued for automatic retry", "wifi-off", "text-ios-orange");
+        }
+      },
+
+      async syncPendingLogs() {
+        if (!this.state.config.webhookUrl) {
+          this.openModal("setupModal", "webhook");
+          return;
+        }
+        const queue = [...this.state.pendingQueue];
+        this.state.pendingQueue = [];
+        for (const item of queue) {
+          await this.pushPayloadToGoogleSheets(item.payload, item.sessionId);
+        }
+      },
+
+      async pullFromGoogleSheets() {
+        const url = (this.state.config.webhookUrl || "").trim();
+        if (!url) {
+          this.showToast("Paste your Google Apps Script URL first", "alert-circle", "text-ios-orange");
+          return;
+        }
+        try {
+          this.showToast("Fetching logs from Google Sheets...", "cloud-download", "text-ios-blue");
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data && data.status === "ok") {
+            this.showToast(`Connected! Sheet has ${(data.strength_logs || []).length} sets & ${(data.cardio_logs || []).length} cardio logs.`, "check-circle-2", "text-ios-green");
+          }
+        } catch (e) {
+          this.showToast("Could not reach Apps Script URL. Check deployment access = 'Anyone'.", "alert-triangle", "text-ios-red");
+        }
+      },
+
+      saveWebhookConfig() {
+        this.state.config.webhookUrl = document.getElementById("gasWebhookUrlInput").value.trim();
+        this.state.config.secretKey = document.getElementById("gasSecretKeyInput").value.trim();
+        this.state.config.shortcutName = document.getElementById("iosShortcutNameInput").value.trim() || "SyncWatchHR";
+        this.saveState();
+        this.closeModal("setupModal");
+        this.showToast("Sheets Webhook & Shortcut config saved");
+      },
+
+      copyGasCode() {
+        const temp = document.createElement("textarea");
+        temp.value = GOOGLE_APPS_SCRIPT_CODE;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand("copy");
+        document.body.removeChild(temp);
+        this.showToast("Code.gs copied to clipboard!", "copy", "text-ios-blue");
+      },
+
+      // ==================== CUSTOMIZER & EXPORT ====================
+      createNewExerciseInTemplate() {
+        const tplId = document.getElementById("newExTemplateId").value;
+        const supersetGroup = document.getElementById("newExSuperset").value.trim().toUpperCase() || "3A";
+        const name = document.getElementById("newExName").value.trim();
+        const equipment = document.getElementById("newExEquipment").value;
+        const targetSets = parseInt(document.getElementById("newExSets").value, 10) || 3;
+        const targetReps = document.getElementById("newExReps").value.trim() || "10-12";
+        const setupNotes = document.getElementById("newExSetupNotes").value.trim() || `${equipment} Standard`;
+
+        if (!name) {
+          this.showToast("Enter an exercise name", "alert-circle", "text-ios-orange");
+          return;
+        }
+
+        const exId = "EX_" + name.toUpperCase().replace(/[^A-Z0-9]/g, "_").substring(0, 16) + "_" + Math.floor(Math.random() * 99);
+        this.state.exercises[exId] = {
+          id: exId,
+          name,
+          category: tplId.split("_")[0],
+          equipment,
+          setupNotes
+        };
+
+        const tpl = this.state.templates[tplId];
+        if (tpl) {
+          tpl.items.push({
+            order: tpl.items.length + 1,
+            supersetGroup,
+            exerciseId: exId,
+            targetSets,
+            targetReps
+          });
+        }
+
+        // If user currently has this template open in an active workout, append it live!
+        if (this.state.activeDraft && this.state.activeDraft.type === "strength" && this.state.activeDraft.templateId === tplId) {
+          const sets = [];
+          for (let s = 1; s <= targetSets; s++) {
+            sets.push({ setNumber: s, weight: "", reps: "", ghostWeight: 35, ghostReps: 10, completed: false });
+          }
+          this.state.activeDraft.exercises.push({
+            exerciseId: exId,
+            name,
+            equipment,
+            setupNotes,
+            supersetGroup,
+            targetReps,
+            sets
+          });
+          this.renderStrengthWorkout();
+        }
+
+        this.saveState();
+        this.renderDashboard();
+        document.getElementById("newExName").value = "";
+        this.closeModal("customizerModal");
+        this.showToast(`Added "${name}" (${supersetGroup}) to ${tplId}`);
+      },
+
+      resetDefaultDatabase() {
+        this.state = JSON.parse(JSON.stringify(DEFAULT_DB));
+        this.saveState();
+        this.closeModal("customizerModal");
+        this.navigate("dashboard");
+        this.showToast("Default Push/Legs/Pull templates restored");
+      },
+
+      exportCSV() {
+        let csv = "Type,Timestamp,Session_ID,Template_or_Modality,Exercise,Superset,Set,Weight_Lbs,Reps,Duration_Min,Distance_Mi,Incline_Pct,Avg_HR,Max_HR,Active_Cals,Notes\n";
+        this.state.strengthHistory.forEach(s => {
+          (s.sets || []).forEach(set => {
+            csv += `Strength,${s.timestamp},${s.sessionId},"${s.templateName}","${set.exerciseName}",${set.supersetGroup},${set.setNumber},${set.weight},${set.reps},,,,${s.avgHr || ""},${s.maxHr || ""},${s.activeCals || ""},"${(s.notes || "").replace(/"/g, '""')}"\n`;
+          });
+        });
+        this.state.cardioHistory.forEach(c => {
+          csv += `Cardio,${c.timestamp},${c.sessionId},"${c.modality}",,,,, ,${c.durationMin},${c.distanceMi},${c.inclinePct},${c.avgHr || ""},${c.maxHr || ""},${c.activeCals || ""},"${(c.intervalNotes || "").replace(/"/g, '""')}"\n`;
+        });
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `pulsesheet_workouts_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        this.showToast("Exported workout history CSV");
+      },
+
+      // ==================== MODAL HELPERS ====================
+      openModal(id, subTab) {
+        document.getElementById(id).classList.remove("hidden");
+        if (id === "setupModal" && subTab) {
+          this.switchSetupTab(subTab);
+        }
+        lucide.createIcons();
+      },
+
+      closeModal(id) {
+        document.getElementById(id).classList.add("hidden");
+      },
+
+      switchSetupTab(tabName) {
+        ["webhook", "script", "shortcut"].forEach(t => {
+          const btn = document.getElementById(`setupTabBtn-${t}`);
+          const panel = document.getElementById(`setupPanel-${t}`);
+          if (t === tabName) {
+            btn.className = "pb-2.5 px-3 text-xs font-bold border-b-2 border-ios-blue text-white";
+            panel.classList.remove("hidden");
+          } else {
+            btn.className = "pb-2.5 px-3 text-xs font-bold border-b-2 border-transparent text-zinc-400 hover:text-white";
+            panel.classList.add("hidden");
+          }
+        });
+      }
+    };
+
+    window.addEventListener("DOMContentLoaded", () => app.init());
+  </script>
+</body>
+</html>
